@@ -34,8 +34,11 @@ async def is_main_page():
     except Exception:
         return False
     bounds = utils.parse_bounds(value['bounds'])
-    # 判断是不是在屏幕下方
-    result = bounds[1] > main_screen[1] * 0.8
+    phone_mode = await hdc.is_phone_mode()
+    if phone_mode:     # 判断是不是在屏幕下方
+        result = bounds[1] > main_screen[1] * 0.8
+    else:
+        result = bounds[1] < main_screen[0] * 0.2
     if result:
         global main_layout_res
         main_layout_res = res

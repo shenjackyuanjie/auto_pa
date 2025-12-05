@@ -46,6 +46,12 @@ async def get_main_screen_size(force: bool = False):
         _main_screen = tuple(map(int, result.split("activeMode: ")[1].split(",")[0].split("x")))
 
     return _main_screen
+
+
+async def is_phone_mode():
+    size = await get_main_screen_size()
+    return size[0] < size[1]
+
 async def dump_layout_to_text() -> str:
     res = await shell("uitest", "dumpLayout")
     try:
