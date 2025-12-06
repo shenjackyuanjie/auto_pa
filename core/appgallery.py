@@ -168,7 +168,7 @@ async def pull_app_in_categories():
 async def get_not_exists_apps(
     apps: list[str]
 ) -> list[str]:
-    return apps
+    # return apps
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
