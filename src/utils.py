@@ -1,8 +1,18 @@
+from dataclasses import dataclass, field
 import re
-from typing import Any, List, Tuple
+from typing import Any, List
 
 JSON_PATH = List[str | int]
-LINKS_AND_PKGS = Tuple[List[str], List[str]]
+
+@dataclass
+class LinksPkgsAppIds:
+    links: List[str] = field(default_factory=list)
+    pkgs: List[str] = field(default_factory=list)
+    app_ids: List[str] = field(default_factory=list)
+
+    def empty(self):
+        return len(self.links) == 0 and len(self.pkgs) == 0 and len(self.app_ids) == 0
+
 
 def find_json_value_as_path(data: Any, value: Any) -> List[JSON_PATH]:
     """
@@ -92,35 +102,115 @@ def json_dumps(
     )
 
 
-def parse_input_split_links_and_pkgs_tuple(input_text: str) -> LINKS_AND_PKGS:
+def parse_input_split_links_pkgs_and_app_ids(input_str: str) -> LinksPkgsAppIds:
     """
-    返回元组而不是字典（更Pythonic的方式）
-    """
-    if not input_text or not input_text.strip():
-        return [], []
+    解析输入字符串，提取链接、包名和app_id
     
-    parts = re.split(r'[\s\n]+', input_text.strip())
+    Args:
+        input_str: 输入的字符串
+        
+    Returns:
+        包含links, pkgs, app_ids的字典
+    """
+    input_str = input_str.strip()
+    if not input_str:
+        return LinksPkgsAppIds()
+    
+    # 支持更多分隔符：空格、换行、逗号、分号、竖线等
+    parts = re.split(r'[\s\n,;|]+', input_str)
     url_like = re.compile(r'^https?://[^\s]+$')
-    pkg_regex = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z0-9_.]+$')
     
-    links = []
-    pkgs = []
-    seen_pkgs = set()  # 使用集合来跟踪已添加的包名以提高性能
+    # 修改正则，将 C+数字 和其他包名分开匹配
+    app_id_regex = re.compile(r'^[Cc]\d+$')  # 匹配 C 开头的数字（app_id）
+    pkg_name_regex = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$')  # 匹配传统包名
     
+    # 用于从文本中提取的正则
+    extract_pkg_regex = re.compile(r'([a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+)')
+    extract_app_id_regex = re.compile(r'[Cc]\d+')
+    
+    links: List[str] = []
+    pkgs: List[str] = []
+    app_ids: List[str] = []
     for part in parts:
-        if url_like.match(part):
-            links.append(part)
-            
-            id_match = re.search(r'id=([a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z0-9_.]+)', part)
-            if id_match:
-                pkg = id_match.group(1)
-                if pkg not in seen_pkgs:
-                    pkgs.append(pkg)
-                    seen_pkgs.add(pkg)
-                    
-        elif pkg_regex.match(part):
-            if part not in seen_pkgs:
-                pkgs.append(part)
-                seen_pkgs.add(part)
-    
-    return links, pkgs
+        start = 0
+        # first app_id / pkg and then url
+        while start < len(part):
+            # 匹配 app_id
+            match = app_id_regex.search(part, start)
+            if match:
+                app_ids.append(match.group())
+                start = match.end()
+                continue
+
+            # 匹配 pkg_name
+            match = pkg_name_regex.search(part, start)
+            if match:
+                pkgs.append(match.group())
+                start = match.end()
+                continue
+
+            # 匹配 url
+            match = url_like.search(part, start)
+            if match:
+                # 匹配包名 / app_id
+                content = match.group()
+                links.append(content)
+                ls = 0
+                while ls < len(content):
+                    m = extract_pkg_regex.search(content, ls)
+                    if m:
+                        pkgs.append(m.group())
+                        ls = m.end()
+                        continue
+
+                    m = extract_app_id_regex.search(content, ls)
+                    if m:
+                        app_ids.append(m.group())
+                        ls = m.end()
+                        continue
+                    ls += 1
+                start = match.end()
+                continue
+
+            # 匹配其他包名
+            match = extract_pkg_regex.search(part, start)
+            if match:
+                pkgs.append(match.group())
+                start = match.end()
+                continue
+
+            # 匹配其他 app_id
+            match = extract_app_id_regex.search(part, start)
+            if match:
+                app_ids.append(match.group())
+                start = match.end()
+                continue
+
+            # 如果没有匹配到，则跳过一个字符
+            start += 1
+
+
+    # 按顺序的去重，也就是根据输入的顺序
+    final_links = []
+    final_pkgs = []
+    final_app_ids = []
+    for item in links:
+        if item in final_links:
+            continue
+        final_links.append(item)
+
+    for item in pkgs:
+        if item in final_pkgs:
+            continue
+        final_pkgs.append(item)
+
+    for item in app_ids:
+        if item in final_app_ids:
+            continue
+        final_app_ids.append(item)
+
+    return LinksPkgsAppIds(
+        links=final_links,
+        pkgs=final_pkgs,
+        app_ids=final_app_ids,
+    )

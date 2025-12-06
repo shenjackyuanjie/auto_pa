@@ -168,7 +168,7 @@ async def pull_app_in_categories():
 async def get_not_exists_apps(
     apps: list[str]
 ) -> list[str]:
-    # return apps
+    return apps
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
@@ -214,16 +214,16 @@ async def click_app_in_category_and_share(
     await hdc.click_by_bounds(utils.parse_bounds(gallery_view_btn))
     
     hilog = await hdc.hilog("-e", '"share"', "-T", "JSAPP", "-z", "10000")
-    _, pkgs = utils.parse_input_split_links_and_pkgs_tuple(hilog)
-    if not pkgs:
+    parse_res = utils.parse_input_split_links_pkgs_and_app_ids(hilog)
+    await hdc.click_by_bounds(utils.parse_bounds(back_btn))
+    if parse_res.empty():
         logger.error(f"没有找到包名 [{app_name}]")
         return
     
-    pkg = pkgs[-1] # get last pkg
+    pkg = parse_res.pkgs[-1] # get last pkg
     logger.success(f"应用 [{app_name}] 包名 [{pkg}]")
     
 
-    await hdc.click_by_bounds(utils.parse_bounds(back_btn))
 
     return pkg
 
