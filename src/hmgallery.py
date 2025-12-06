@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Any, Optional, TypedDict
 import httpx
 from tianxiu2b2t.anyio.concurrency import gather
@@ -59,17 +59,20 @@ class HMGallery:
             "search_exact": True,
         }
         while 1:
-            resp = await self.client.get(f"apps/list/{(idx := idx + 1)}", params=params)
-            if resp.status_code == 200:
-                response: BaseResponse = resp.json()
-                data: SearchListResponse = response["data"]
-                # find name
-                for app in data["data"]:
-                    if app["name"].lower() == name.lower():
-                        cache.set(f"app:{name}", True)
-                        return True
-                if data["total_pages"] <= idx:
-                    break
+            stable_count = 0
+            while (stable_count := stable_count + 1) < 3:
+                current_idx = (idx := idx + 1)
+                resp = await self.client.get(f"apps/list/{current_idx}", params=params)
+                if resp.status_code == 200:
+                    response: BaseResponse = resp.json()
+                    data: SearchListResponse = response["data"]
+                    # find name
+                    for app in data["data"]:
+                        if app["name"].lower() == name.lower():
+                            cache.set(f"app:{name}", True)
+                            return True
+                    if data["total_pages"] <= current_idx:
+                        return False
 
         return False
 
@@ -89,9 +92,14 @@ class HMGallery:
         comment.platform = "auto_pa"
         resp = await self.client.post("submit", json={
             "pkg_name": pkg,
-            "comment": comment
+            "comment": asdict(comment)
         })
-        return resp.status_code == 200
+        if resp.status_code != 200:
+            return False
+        response: BaseResponse = resp.json()
+        if response["success"]:
+            return True
+        return False
 
 def init_gallery(
     base_url: str,

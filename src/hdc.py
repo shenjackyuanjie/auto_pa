@@ -11,7 +11,7 @@ _main_screen = None
 
 async def _exec(
     *args: str,
-    timeout: float = 10,
+    timeout: float = 30,
 ):
     with anyio.fail_after(
         timeout
