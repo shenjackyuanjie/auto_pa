@@ -129,7 +129,7 @@ async def pull_app_in_categories():
     
     clicked_categories: set[str] = set()
     stable_count = 0
-    while (stable_count := stable_count + 1) <= 3:
+    while stable_count < 2:
         current_clicked_categories = set()
         res = await hdc.dump_layout_to_json()
         list_items = utils.find_json_value_by_prev_path(res, utils.find_json_value_as_path(res, "List")[-1], 2)
