@@ -31,6 +31,10 @@ class CommentInfo:
     user: Optional[str] = None
     note: Optional[str] = None
 
+    def clone(self):
+        return CommentInfo(**asdict(self))
+
+
 class HMGallery:
     def __init__(self, base_url: str):
         self.client = httpx.AsyncClient(base_url=base_url, http2=True)
@@ -81,7 +85,7 @@ class HMGallery:
         *pkgs: str,
         comment: Optional[CommentInfo] = None
     ) -> dict[str, bool]:
-        return dict(zip(pkgs, await gather(*(self.submit_app(pkg, comment) for pkg in pkgs))))
+        return dict(zip(pkgs, await gather(*(self.submit_app(pkg, comment.clone() if comment else None) for pkg in pkgs))))
     
     async def submit_app(
         self,

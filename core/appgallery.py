@@ -170,7 +170,7 @@ async def pull_app_in_categories():
 async def get_not_exists_apps(
     apps: list[str]
 ) -> list[str]:
-    return apps
+    # return apps
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
@@ -264,10 +264,11 @@ async def pull_apps_in_categories():
                 logger.error(f"应用 [{app}] 分享不了？")
                 continue
             new_shared.append(shared_res)
-        
-        await gallery.get_gallery().submit_apps(*new_shared, comment=gallery.CommentInfo(
-            user=submit_username,
-        ))
+
+        if submit_in_python:
+            await gallery.get_gallery().submit_apps(*new_shared, comment=gallery.CommentInfo(
+                user=submit_username,
+            ))
 
         for app in current_apps_list:
             full_apps_list.add(app)
