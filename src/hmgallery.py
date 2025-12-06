@@ -1,6 +1,10 @@
+from dataclasses import dataclass
 from typing import Any, Optional, TypedDict
 import httpx
-from tianxiu2b2t.anyio.concurrency import gather 
+from tianxiu2b2t.anyio.concurrency import gather
+
+from .cache import cache 
+from .logger import logger
 
 _gallery: Optional['HMGallery'] = None
 
@@ -21,6 +25,12 @@ class SearchListResponse(TypedDict):
     total_count: int
     total_pages: int
 
+@dataclass
+class CommentInfo:
+    platform: Optional[str] = None
+    user: Optional[str] = None
+    note: Optional[str] = None
+
 class HMGallery:
     def __init__(self, base_url: str):
         self.client = httpx.AsyncClient(base_url=base_url, http2=True)
@@ -36,6 +46,9 @@ class HMGallery:
         self,
         name: str,
     ) -> bool:
+        if cache.get(f"app:{name}", False) is True:
+            logger.debug(f"[{name}] is exists")
+            return True
         idx = 0
         params = {
             "sort": "download_count",
@@ -53,6 +66,7 @@ class HMGallery:
                 # find name
                 for app in data["data"]:
                     if app["name"].lower() == name.lower():
+                        cache.set(f"app:{name}", True)
                         return True
                 if data["total_pages"] <= idx:
                     break
@@ -62,19 +76,20 @@ class HMGallery:
     async def submit_apps(
         self,
         *pkgs: str,
+        comment: Optional[CommentInfo] = None
     ) -> dict[str, bool]:
-        return dict(zip(pkgs, await gather(*(self.submit_app(pkg) for pkg in pkgs))))
+        return dict(zip(pkgs, await gather(*(self.submit_app(pkg, comment) for pkg in pkgs))))
     
     async def submit_app(
         self,
         pkg: str,
+        comment: Optional[CommentInfo] = None
     ) -> bool:
+        comment = (comment or CommentInfo())
+        comment.platform = "auto_pa"
         resp = await self.client.post("submit", json={
             "pkg_name": pkg,
-            "comment": {
-                "platform": "auto_pa/feature/refactor",
-                "user": "2b2ttianxiu_auto_pull",
-            }
+            "comment": comment
         })
         return resp.status_code == 200
 

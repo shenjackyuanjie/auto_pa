@@ -5,6 +5,7 @@ try_get.py
 *__pycache__*
 .python-version
 .lh
+.cache
 
 
 # Added by cargo

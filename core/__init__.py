@@ -1,5 +1,6 @@
 import argparse
 from .appgallery import main as gallery_main, argument as gallery_argument
+from src.logger import logger
 
 def create_main_parser():
     """创建主参数解析器"""
@@ -39,8 +40,8 @@ async def cli_main():
         try:
             await args.func(args)
         except KeyboardInterrupt:
-            print("\n操作被用户中断")
-        except Exception as e:
-            print(f"错误: {e}")
+            logger.warning("操作被用户中断")
+        except Exception:
+            logger.traceback("错误")
     else:
         parser.print_help()

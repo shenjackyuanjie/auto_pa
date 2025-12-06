@@ -13,6 +13,7 @@ argument = argparse.ArgumentParser()
 argument.add_argument('--skip-categories', '--sc', type=str, nargs="+")
 argument.add_argument('--fast-pull', '--fp', help="Fast pull app, not check devices in main page", action="store_true")
 argument.add_argument('--gallery-api', '--ga', help="Use gallery api to pull app", default="https://hmos.txit.top/api")
+argument.add_argument('--username', '-u', help="Submit app with this username", required=True)
 
 @dataclass
 class AppInCategory:
@@ -29,14 +30,8 @@ app_categories_branches: list[utils.JSON_PATH] = [
 apps_in_category_path: utils.JSON_PATH = ['children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 1, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children',]
 apps_in_category_app_name = ['children', 0, 'attributes', 'text']
 
-skip_categories = [
-    # '出行导航',
-    # '儿童',
-    # '房产与装修',
-    # '工具',
-    # '购物',
-    # '教育',
-]
+skip_categories = []
+submit_username = ''
 
 async def is_main_page():
     main_screen = await hdc.get_main_screen_size()
@@ -45,7 +40,7 @@ async def is_main_page():
     try:
         value = utils.find_json_value_by_path(res, paths[2][:-1])
     except Exception as e:
-        print(e)
+        logger.error(f"Error: {e}")
         with open("layout.json", "w", encoding="utf-8") as f:
             f.write(utils.json_dumps(res))
         return False
@@ -370,7 +365,7 @@ async def pull_apps_in_categories():
     full_apps_list: set[str] = set()
     stable_count = 0
     while stable_count <= 3:
-        await anyio.sleep(1 + random.randint(1, 10) * 0.1)
+        await anyio.sleep(0.25 + random.randint(3, 5) * 0.1)
         res = await hdc.dump_layout_to_json()
         data = utils.find_json_value_by_path(res, ['children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 1, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children',])
         current_apps_list: list[str] = []
@@ -398,9 +393,11 @@ async def pull_apps_in_categories():
             if not shared_res:
                 logger.error(f"应用 [{app}] 分享不了？")
                 continue
-            new_shared.append(app)
+            new_shared.append(shared_res)
         
-        await gallery.get_gallery().submit_apps(*new_shared)
+        await gallery.get_gallery().submit_apps(*new_shared, comment=gallery.CommentInfo(
+            user=submit_username,
+        ))
 
         for app in current_apps_list:
             full_apps_list.add(app)
@@ -444,6 +441,7 @@ def get_value_from_categories_res(res: dict, idx: int = 0):
         
 
 async def main(args):
+    global skip_categories, submit_username
     logger.info("AppGallery Ciallo～ (∠・ω< )⌒★")
     logger.info("请确保当前在应用市场首页~")
 
@@ -457,14 +455,22 @@ async def main(args):
 
     args_gallery_api = args.gallery_api or "https://hmos.txit.top/api"
     logger.info(f"Gallery API: {args_gallery_api}")
-    gallery.init_gallery(args_gallery_api or "https://hmos.txit.top/api")
+    gallery.init_gallery(args_gallery_api)
 
-    args_fast_pull = args.fast_pull is not None
+    args_fast_pull = args.fast_pull
     if args_fast_pull:
         logger.info("快速模式，需要在应用分类中的应用列表")
         await next_pull_apps_in_categories()
         return
     
+    args_username = args.username
+    if args_username is None or not args_username.strip():
+        logger.info("未找到用户名")
+        return
+    
+    submit_username = args_username
+    logger.info(f"用户名: {submit_username}")
+
     await click_bottom_bar_app()
     await click_app_categories()
     await pull_app_in_categories()
