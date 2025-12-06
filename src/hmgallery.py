@@ -34,6 +34,11 @@ class CommentInfo:
     def clone(self):
         return CommentInfo(**asdict(self))
 
+    def to_json(self):
+        data = asdict(self)
+        # pop value is None
+        return {k: v for k, v in data.items() if v is not None}
+
 
 class HMGallery:
     def __init__(self, base_url: str):
@@ -96,7 +101,7 @@ class HMGallery:
         comment.platform = "auto_pa"
         resp = await self.client.post("submit", json={
             "pkg_name": pkg,
-            "comment": asdict(comment)
+            "comment": comment.to_json()
         })
         if resp.status_code != 200:
             return False
