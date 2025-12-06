@@ -69,7 +69,7 @@ class HMGallery:
                     # find name
                     for app in data["data"]:
                         if app["name"].lower() == name.lower():
-                            cache.set(f"app:{name}", True)
+                            cache.set(f"app:{name}", True, 3600)
                             return True
                     if data["total_pages"] <= current_idx:
                         return False

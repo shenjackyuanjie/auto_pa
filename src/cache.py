@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Optional
 import diskcache
 
 
@@ -12,8 +12,8 @@ class CacheManager:
     def get(self, key: str, _default: Any = None) -> Any:
         return self.cache.get(key, _default)
 
-    def set(self, key: str, value: Any) -> None:
-        self.cache.set(key, value)
+    def set(self, key: str, value: Any, expire: Optional[float] = None) -> None:
+        self.cache.set(key, value, expire=expire)
 
     def delete(self, key: str) -> None:
         self.cache.delete(key)
