@@ -14,6 +14,7 @@ argument.add_argument('--skip-categories', '--sc', type=str, nargs="+")
 argument.add_argument('--fast-pull', '--fp', help="Fast pull app, not check devices in main page", action="store_true")
 argument.add_argument('--gallery-api', '--ga', help="Use gallery api to pull app", default="https://hmos.txit.top/api")
 argument.add_argument('--username', '-u', help="Submit app with this username", required=True)
+argument.add_argument('--submit', '-s', help="In python, submit app to gallery", action="store_true")
 
 @dataclass
 class AppInCategory:
@@ -35,6 +36,7 @@ submit_username = ''
 share_layout_res = None
 share_with_gallery_view_page_res = None
 app_detail_layout_res = None
+submit_in_python = False
 
 async def is_main_page():
     main_screen = await hdc.get_main_screen_size()
@@ -168,7 +170,7 @@ async def pull_app_in_categories():
 async def get_not_exists_apps(
     apps: list[str]
 ) -> list[str]:
-    # return apps
+    return apps
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
@@ -294,9 +296,9 @@ async def next_pull_apps_in_categories():
         
 
 async def main(args):
-    global skip_categories, submit_username
+    global skip_categories, submit_username, submit_in_python
     logger.info("AppGallery Ciallo～ (∠・ω< )⌒★")
-    logger.info("请确保当前在应用市场首页~")
+    logger.info("请确保当前在 [应用市场] 首页~")
 
     # skip categories
     args_skip_categories = args.skip_categories
@@ -310,11 +312,6 @@ async def main(args):
     logger.info(f"Gallery API: {args_gallery_api}")
     gallery.init_gallery(args_gallery_api)
 
-    args_fast_pull = args.fast_pull
-    if args_fast_pull:
-        logger.info("快速模式，需要在应用分类中的应用列表")
-        await next_pull_apps_in_categories()
-        return
     
     args_username = args.username
     if args_username is None or not args_username.strip():
@@ -322,7 +319,20 @@ async def main(args):
         return
     
     submit_username = args_username
-    logger.info(f"用户名: {submit_username}")
+    logger.info(f"用户名 [{submit_username}]")
+
+    args_submit = args.submit
+    submit_in_python = args_submit
+    if not args_submit:
+        logger.info("将在 [应用看板] 提交数据")
+    else:
+        logger.info("将在 [Python] 提交数据")
+
+    args_fast_pull = args.fast_pull
+    if args_fast_pull:
+        logger.info("快速模式，需要在应用分类中的应用列表")
+        await next_pull_apps_in_categories()
+        return
 
     await click_bottom_bar_app()
     await click_app_categories()
