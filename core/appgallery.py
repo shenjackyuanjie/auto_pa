@@ -38,14 +38,17 @@ async def is_main_page():
     paths = utils.find_json_value_as_path(res, "探索")
     try:
         value = utils.find_json_value_by_path(res, paths[2][:-1])
-    except Exception:
+    except Exception as e:
+        print(e)
+        with open("layout.json", "w", encoding="utf-8") as f:
+            f.write(utils.json_dumps(res))
         return False
     bounds = utils.parse_bounds(value['bounds'])
     phone_mode = await hdc.is_phone_mode()
     if phone_mode:     # 判断是不是在屏幕下方
         result = bounds[1] > main_screen[1] * 0.8
     else:
-        result = bounds[1] < main_screen[0] * 0.2 and bounds[1] > main_screen[1] * 0.1
+        result = bounds[1] < main_screen[0] * 0.2
     if result:
         global main_layout_res
         main_layout_res = res
