@@ -1,6 +1,8 @@
-from typing import Any, List
+import re
+from typing import Any, List, Tuple
 
 JSON_PATH = List[str | int]
+LINKS_AND_PKGS = Tuple[List[str], List[str]]
 
 def find_json_value_as_path(data: Any, value: Any) -> List[JSON_PATH]:
     """
@@ -49,7 +51,7 @@ def find_json_value_by_prev_path(data: Any, path: JSON_PATH, deep: int = 1) -> A
     """
     根据给定的路径（`JSON_PATH` 类型）在数据中查找对应的值。
     """
-    # pop 最后一个元素
+    # pop 最后一个元link
     prev_path = path[:-deep]
     return find_json_value_by_path(data, prev_path)
 
@@ -88,3 +90,37 @@ def json_dumps(
         ensure_ascii=ensure_ascii,
         sort_keys=sort_keys,
     )
+
+
+def parse_input_split_links_and_pkgs_tuple(input_text: str) -> LINKS_AND_PKGS:
+    """
+    返回元组而不是字典（更Pythonic的方式）
+    """
+    if not input_text or not input_text.strip():
+        return [], []
+    
+    parts = re.split(r'[\s\n]+', input_text.strip())
+    url_like = re.compile(r'^https?://[^\s]+$')
+    pkg_regex = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z0-9_.]+$')
+    
+    links = []
+    pkgs = []
+    seen_pkgs = set()  # 使用集合来跟踪已添加的包名以提高性能
+    
+    for part in parts:
+        if url_like.match(part):
+            links.append(part)
+            
+            id_match = re.search(r'id=([a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z0-9_.]+)', part)
+            if id_match:
+                pkg = id_match.group(1)
+                if pkg not in seen_pkgs:
+                    pkgs.append(pkg)
+                    seen_pkgs.add(pkg)
+                    
+        elif pkg_regex.match(part):
+            if part not in seen_pkgs:
+                pkgs.append(part)
+                seen_pkgs.add(part)
+    
+    return links, pkgs

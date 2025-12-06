@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 import random
+from typing import Optional
 import anyio
 import src.hdc as hdc
 import src.utils as utils
@@ -22,8 +23,14 @@ app_categories_branches: list[utils.JSON_PATH] = [
 apps_in_category_path: utils.JSON_PATH = ['children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 1, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children',]
 apps_in_category_app_name = ['children', 0, 'attributes', 'text']
 
-clipboards_limit = 100 #
-clipboards: int = 0
+skip_categories = [
+    '出行导航',
+    '儿童',
+    '房产与装修',
+    '工具',
+    '购物',
+    '教育',
+]
 
 async def is_main_page():
     main_screen = await hdc.get_main_screen_size()
@@ -38,7 +45,7 @@ async def is_main_page():
     if phone_mode:     # 判断是不是在屏幕下方
         result = bounds[1] > main_screen[1] * 0.8
     else:
-        result = bounds[1] < main_screen[0] * 0.2
+        result = bounds[1] < main_screen[0] * 0.2 and bounds[1] > main_screen[1] * 0.1
     if result:
         global main_layout_res
         main_layout_res = res
@@ -249,10 +256,13 @@ async def pull_app_in_categories():
                 break
             clicked_categories.add(text)
             current_clicked_categories.add(text)
+            if text in skip_categories:
+                logger.warning(f"跳过分类 [{text}]")
+                continue
             logger.info(f"点击分类 [{text}]")
             await hdc.click_by_bounds(bounds)
 
-            await anyio.sleep(1.25)
+            await anyio.sleep(0.75)
             # start pull apps
             await next_pull_apps_in_categories()
             
@@ -283,7 +293,7 @@ async def get_not_exists_apps(
 async def click_app_in_category_and_share(
     app_name: str,
     bounds: tuple[int, int, int, int]
-):
+) -> Optional[str]:
     await hdc.click_by_bounds(bounds)
 
     layout = await hdc.dump_layout_to_json()
@@ -297,28 +307,40 @@ async def click_app_in_category_and_share(
 
 
     # =============== Temp ===============
-    global clipboards
     await hdc.click_by_bounds(utils.parse_bounds(share_btn))
     await anyio.sleep(0.5)
 
     share_layout = await hdc.dump_layout_to_json()
-    with open("share_layout.json", "w", encoding="utf-8") as f:
-        f.write(utils.json_dumps(share_layout))
-    copy_btn = utils.find_json_value_by_prev_path(share_layout, utils.find_json_value_as_path(share_layout, "复制")[0])['bounds']
-    # quit_share_btn = utils.find_json_value_by_prev_path(share_layout, utils.find_json_value_as_path(share_layout, "arrow_button")[0])['bounds']
-    await hdc.click_by_bounds(utils.parse_bounds(copy_btn))
-    clipboards += 1
-    if clipboards % 10 == 0:
-        logger.warning(f"剪贴板已使用 {clipboards} 次")
-    if clipboards >= clipboards_limit:
-        # wait for console user input
-        try:
-            input("请手动清空剪贴板，然后按回车继续")
-        except Exception:
-            pass
-        clipboards = 0 
-    await anyio.sleep(0.1)
-    await hdc.click_by_bounds(utils.parse_bounds(back_btn))
+    # with open("share_layout.json", "w", encoding="utf-8") as f:
+    #     f.write(utils.json_dumps(share_layout))
+
+    share_to_gallery_view = utils.find_json_value_by_prev_path(share_layout, utils.find_json_value_as_path(share_layout, "应用看板")[0])['bounds']
+    await hdc.click_by_bounds(utils.parse_bounds(share_to_gallery_view))
+
+    share_with_gallery_view_page = await hdc.dump_layout_to_json()
+    gallery_view_btn = utils.find_json_value_by_prev_path(share_with_gallery_view_page, utils.find_json_value_as_path(share_with_gallery_view_page, "按已有信息投稿到看板")[0])['bounds']
+    await hdc.click_by_bounds(utils.parse_bounds(gallery_view_btn))
+    
+    hilog = await hdc.hilog("-e", '"share"', "-T", "JSAPP", "-z", "10000")
+    _, pkgs = utils.parse_input_split_links_and_pkgs_tuple(hilog)
+    pkg = pkgs[-1] # get last pkg
+    logger.success(f"应用 [{app_name}] 包名 [{pkg}]")
+    # copy_btn = utils.find_json_value_by_prev_path(share_layout, utils.find_json_value_as_path(share_layout, "复制")[0])['bounds']
+    # # quit_share_btn = utils.find_json_value_by_prev_path(share_layout, utils.find_json_value_as_path(share_layout, "arrow_button")[0])['bounds']
+    # await hdc.click_by_bounds(utils.parse_bounds(copy_btn))
+    # clipboards += 1
+    # if clipboards % 10 == 0:
+    #     logger.warning(f"剪贴板已使用 {clipboards} 次")
+    # if clipboards >= clipboards_limit:
+    #     # wait for console user input
+    #     try:
+    #         input("请手动清空剪贴板，然后按回车继续")
+    #     except Exception:
+    #         pass
+    #     clipboards = 0 
+    
+    await anyio.sleep(0.3)
+    # await hdc.click_by_bounds(utils.parse_bounds(back_btn))
 
 
 
@@ -332,6 +354,8 @@ async def click_app_in_category_and_share(
     # 我要哈气了
 
     await hdc.click_by_bounds(utils.parse_bounds(back_btn))
+
+    return pkg
 
 async def pull_apps_in_categories():
     full_apps_list: set[str] = set()
@@ -356,13 +380,19 @@ async def pull_apps_in_categories():
     
         new_diff_apps = set(current_apps_list) - full_apps_list
         not_exists_apps = await get_not_exists_apps(list(new_diff_apps))
+        new_shared = []
         for app in current_apps_list:
             if app not in not_exists_apps:
                 continue
             logger.success(f"发现新应用 [{app}]")
-            await click_app_in_category_and_share(app, current_apps_bounds[app])
+            shared_res = await click_app_in_category_and_share(app, current_apps_bounds[app])
+            if not shared_res:
+                logger.error(f"应用 [{app}] 分享不了？")
+                continue
+            new_shared.append(app)
         
-        
+        await gallery.get_gallery().submit_apps(*new_shared)
+
         for app in current_apps_list:
             full_apps_list.add(app)
 
@@ -401,9 +431,7 @@ def get_value_from_categories_res(res: dict, idx: int = 0):
             continue
         result.extend(get_value_from_categories_res(v, next_idx))
     return result
-        
 
-    
         
 
 async def main():

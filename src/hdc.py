@@ -37,6 +37,12 @@ async def shell(
     )).stdout.decode("utf-8")
     return res
 
+async def hilog(
+    *args: str,
+    timeout: float = 10,
+) -> str:
+    return await shell(*("hilog", *args), timeout=timeout)
+
 
 async def get_main_screen_size(force: bool = False):
     global _main_screen

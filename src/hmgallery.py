@@ -23,7 +23,7 @@ class SearchListResponse(TypedDict):
 
 class HMGallery:
     def __init__(self, base_url: str):
-        self.client = httpx.AsyncClient(base_url=base_url)
+        self.client = httpx.AsyncClient(base_url=base_url, http2=True)
 
     async def search_app_names_exists(
         self,
@@ -58,6 +58,25 @@ class HMGallery:
                     break
 
         return False
+
+    async def submit_apps(
+        self,
+        *pkgs: str,
+    ) -> dict[str, bool]:
+        return dict(zip(pkgs, await gather(*(self.submit_app(pkg) for pkg in pkgs))))
+    
+    async def submit_app(
+        self,
+        pkg: str,
+    ) -> bool:
+        resp = await self.client.post("submit", json={
+            "pkg_name": pkg,
+            "comment": {
+                "platform": "auto_pa/feature/refactor",
+                "user": "2b2ttianxiu_auto_pull",
+            }
+        })
+        return resp.status_code == 200
 
 def init_gallery(
     base_url: str,
