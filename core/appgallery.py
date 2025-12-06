@@ -1,3 +1,4 @@
+import argparse
 from dataclasses import dataclass
 import random
 from typing import Optional
@@ -7,6 +8,11 @@ import src.utils as utils
 import src.hmgallery as gallery
 from src.logger import logger
 
+
+argument = argparse.ArgumentParser()
+argument.add_argument('--skip-categories', '--sc', type=str, nargs="+")
+argument.add_argument('--fast-pull', '--fp', help="Fast pull app, not check devices in main page", action="store_true")
+argument.add_argument('--gallery-api', '--ga', help="Use gallery api to pull app", default="https://hmos.txit.top/api")
 
 @dataclass
 class AppInCategory:
@@ -24,12 +30,12 @@ apps_in_category_path: utils.JSON_PATH = ['children', 0, 'children', 0, 'childre
 apps_in_category_app_name = ['children', 0, 'attributes', 'text']
 
 skip_categories = [
-    '出行导航',
-    '儿童',
-    '房产与装修',
-    '工具',
-    '购物',
-    '教育',
+    # '出行导航',
+    # '儿童',
+    # '房产与装修',
+    # '工具',
+    # '购物',
+    # '教育',
 ]
 
 async def is_main_page():
@@ -276,7 +282,7 @@ async def pull_app_in_categories():
         
         if not current_clicked_categories:
             stable_count += 1
-            logger.warning(f"没有找到可点击的分类 [{stable_count}]")
+            logger.debug(f"没有找到可点击的分类 [{stable_count}]")
             continue
 
         stable_count = 0
@@ -405,7 +411,7 @@ async def pull_apps_in_categories():
 
         if not current_apps_list:
             stable_count += 1
-            logger.warning(f"尝试滑动失败，可能是到达底部 [{stable_count}]")
+            logger.debug(f"尝试滑动失败，可能是到达底部 [{stable_count}]")
             continue
         
         stable_count = 0
@@ -437,10 +443,28 @@ def get_value_from_categories_res(res: dict, idx: int = 0):
 
         
 
-async def main():
+async def main(args):
     logger.info("AppGallery Ciallo～ (∠・ω< )⌒★")
-    logger.info("请确保当前在应用市场首页")
-    gallery.init_gallery("https://hmos.txit.top/api")
+    logger.info("请确保当前在应用市场首页~")
+
+    # skip categories
+    args_skip_categories = args.skip_categories
+    if args_skip_categories is not None and isinstance(args_skip_categories, list) and len(args_skip_categories) > 0:
+        for sc in args_skip_categories:
+            if sc in skip_categories:
+                continue
+            skip_categories.append(sc)
+
+    args_gallery_api = args.gallery_api or "https://hmos.txit.top/api"
+    logger.info(f"Gallery API: {args_gallery_api}")
+    gallery.init_gallery(args_gallery_api or "https://hmos.txit.top/api")
+
+    args_fast_pull = args.fast_pull is not None
+    if args_fast_pull:
+        logger.info("快速模式，需要在应用分类中的应用列表")
+        await next_pull_apps_in_categories()
+        return
+    
     await click_bottom_bar_app()
     await click_app_categories()
     await pull_app_in_categories()

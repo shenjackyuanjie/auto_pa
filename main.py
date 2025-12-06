@@ -1,8 +1,8 @@
 import anyio
-import core.appgallery as appgallery
+import core
 
 async def main():
-    await appgallery.main()
+    await core.cli_main()
     
 
 if __name__ == "__main__":
