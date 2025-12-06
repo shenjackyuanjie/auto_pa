@@ -36,20 +36,17 @@ submit_username = ''
 async def is_main_page():
     main_screen = await hdc.get_main_screen_size()
     res = await hdc.dump_layout_to_json()
-    paths = utils.find_json_value_as_path(res, "探索")
+    paths = utils.find_json_value_as_path(res, "tab_text")
     try:
-        value = utils.find_json_value_by_path(res, paths[2][:-1])
-    except Exception as e:
-        logger.error(f"Error: {e}")
-        with open("layout.json", "w", encoding="utf-8") as f:
-            f.write(utils.json_dumps(res))
+        value = utils.find_json_value_by_prev_path(res, paths[0])
+    except Exception:
         return False
     bounds = utils.parse_bounds(value['bounds'])
     phone_mode = await hdc.is_phone_mode()
     if phone_mode:     # 判断是不是在屏幕下方
         result = bounds[1] > main_screen[1] * 0.8
     else:
-        result = bounds[1] < main_screen[0] * 0.2
+        result = bounds[0] < main_screen[0] * 0.2
     if result:
         global main_layout_res
         main_layout_res = res
@@ -244,18 +241,21 @@ async def pull_app_in_categories():
     while (stable_count := stable_count + 1) <= 3:
         current_clicked_categories = set()
         res = await hdc.dump_layout_to_json()
-        values = get_value_from_categories_res(res)
-        if not values:
+        list_value = utils.find_json_value_by_path(res, utils.find_json_value_as_path(res, "List")[0])
+        buttons = utils.list_json_value_by_paths(list_value, utils.find_json_value_as_path(list_value, "Button"))
+        # listItems
+        # values = get_value_from_categories_res(res)
+        if not buttons:
             continue
-        for value in values:
-            try:
-                item = utils.find_json_value_by_path(value, ['children', 0, 'children', 0, 'children', 0, 'attributes'])
-            except Exception:
-                continue
-            text = item['text']
+        for btn in buttons:
+            # try:
+            #     item = utils.find_json_value_by_path(btn, ['children', 0, 'children', 0, 'children', 0, 'attributes'])
+            # except Exception:
+            #     continue
+            text = btn['text']
             if text is None or text == '' or text in clicked_categories:
                 continue
-            bounds = utils.parse_bounds(item['bounds'])
+            bounds = utils.parse_bounds(btn['bounds'])
             if bounds[3] > main_screen_size[1] * 0.9:
                 break
             clicked_categories.add(text)
@@ -297,7 +297,7 @@ async def get_not_exists_apps(
 async def click_app_in_category_and_share(
     app_name: str,
     bounds: tuple[int, int, int, int]
-) -> Optional[str]:
+) -> bool:
     await hdc.click_by_bounds(bounds)
 
     layout = await hdc.dump_layout_to_json()
@@ -305,7 +305,7 @@ async def click_app_in_category_and_share(
     share_btn = utils.find_json_value_by_prev_path(layout, utils.find_json_value_as_path(layout, "detail_share_menu")[0])['bounds']
     if back_btn is None or share_btn is None:
         logger.error(f"[{app_name}] 没有找到返回按钮或分享按钮")
-        return
+        return False
 
     await anyio.sleep(0.75) # wait for network pull
 
@@ -325,10 +325,10 @@ async def click_app_in_category_and_share(
     gallery_view_btn = utils.find_json_value_by_prev_path(share_with_gallery_view_page, utils.find_json_value_as_path(share_with_gallery_view_page, "按已有信息投稿到看板")[0])['bounds']
     await hdc.click_by_bounds(utils.parse_bounds(gallery_view_btn))
     
-    hilog = await hdc.hilog("-e", '"share"', "-T", "JSAPP", "-z", "10000")
-    _, pkgs = utils.parse_input_split_links_and_pkgs_tuple(hilog)
-    pkg = pkgs[-1] # get last pkg
-    logger.success(f"应用 [{app_name}] 包名 [{pkg}]")
+    # hilog = await hdc.hilog("-e", '"share"', "-T", "JSAPP", "-z", "10000")
+    # _, pkgs = utils.parse_input_split_links_and_pkgs_tuple(hilog)
+    # pkg = pkgs[-1] # get last pkg
+    # logger.success(f"应用 [{app_name}] 包名 [{pkg}]")
     # copy_btn = utils.find_json_value_by_prev_path(share_layout, utils.find_json_value_as_path(share_layout, "复制")[0])['bounds']
     # # quit_share_btn = utils.find_json_value_by_prev_path(share_layout, utils.find_json_value_as_path(share_layout, "arrow_button")[0])['bounds']
     # await hdc.click_by_bounds(utils.parse_bounds(copy_btn))
@@ -343,7 +343,7 @@ async def click_app_in_category_and_share(
     #         pass
     #     clipboards = 0 
     
-    await anyio.sleep(0.3)
+    await anyio.sleep(1.2)
     # await hdc.click_by_bounds(utils.parse_bounds(back_btn))
 
 
@@ -356,10 +356,11 @@ async def click_app_in_category_and_share(
     # 因为某人在 2025/12/5 23:09:30 在某地铁上回家
     # 然后我现在需要等他回到家，写完这个玩意出来*
     # 我要哈气了
+    print(back_btn)
 
     await hdc.click_by_bounds(utils.parse_bounds(back_btn))
 
-    return pkg
+    return True
 
 async def pull_apps_in_categories():
     full_apps_list: set[str] = set()
@@ -367,14 +368,20 @@ async def pull_apps_in_categories():
     while stable_count <= 3:
         await anyio.sleep(0.25 + random.randint(3, 5) * 0.1)
         res = await hdc.dump_layout_to_json()
-        data = utils.find_json_value_by_path(res, ['children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 1, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children',])
+        list_items = utils.find_json_value_by_prev_path(res, utils.find_json_value_as_path(res, "List")[0], 2)
+        # text_zone
+        # items = utils.list_json_value_by_paths(list_items, utils.find_json_value_as_path(list_items, "text_zone"))
+        # data = utils.find_json_value_by_path(res, ['children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 1, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children',])
         current_apps_list: list[str] = []
         current_apps_bounds: dict[str, tuple[int, int, int, int]] = {}
-        for path in utils.find_json_value_as_path(data, "app_name"):
-            item = utils.find_json_value_by_prev_path(data, path, 1)
+        with open("layout_apps.json", "w", encoding="utf-8") as f:
+            f.write(utils.json_dumps(list_items))
+        for path in utils.find_json_value_as_path(list_items, "app_name"):
+            item = utils.find_json_value_by_prev_path(list_items, path, 1)
             try:
                 text = item['text']
             except Exception:
+                logger.traceback("无法获取应用名称，跳过该应用", item)
                 continue
             if text is None or text == '' or text in current_apps_list or text in full_apps_list:
                 continue
