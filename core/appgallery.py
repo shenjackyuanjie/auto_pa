@@ -232,7 +232,7 @@ async def click_app_in_category_and_share(
 async def pull_apps_in_categories():
     full_apps_list: set[str] = set()
     stable_count = 0
-    while stable_count <= 3:
+    while stable_count < 2:
         await anyio.sleep(0.25 + random.randint(3, 5) * 0.1)
         res = await hdc.dump_layout_to_json()
         list_items = utils.find_json_value_by_prev_path(res, utils.find_json_value_as_path(res, "List")[0], 2)
