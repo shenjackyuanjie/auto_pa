@@ -91,7 +91,17 @@ class AdvancedProcess:
         assert self._process is not None, "process not started"
         assert self._tg is not None, "task group not started"
         await self._tg.__aexit__(exc_type, exc_val, exc_tb)
-        await self._process.wait()
+        self._tg = None
+        
+        try:
+            with anyio.fail_after(10):
+                self._process.kill()
+                await self._process.wait()
+        except TimeoutError:
+            pass
+        if self._process.returncode is None:  # noqa: E714
+            self._process.terminate()
+        self._process = None
 
     async def __aiter__(self):
         assert self._process is not None, "process not started"
@@ -101,8 +111,9 @@ class AdvancedProcess:
             yield line.decode("utf-8")
 
     def __del__(self):
-        if self._process is not None:
+        if self._process is not None and not self._process.returncode is None:  # noqa: E714
             self._process.terminate()
+            self._process = None
         if self._tg is not None:
             self._tg.cancel_scope.cancel()
         logger.debug("AdvancedProcess deleted")
@@ -128,6 +139,7 @@ async def advanced_hilog(
                 res.append(line)
                 if len(res) >= count:
                     break
+                
     return res
 
 
