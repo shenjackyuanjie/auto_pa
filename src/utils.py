@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+import datetime
 import re
 from typing import Any, List
 
@@ -214,3 +215,11 @@ def parse_input_split_links_pkgs_and_app_ids(input_str: str) -> LinksPkgsAppIds:
         pkgs=final_pkgs,
         app_ids=final_app_ids,
     )
+
+def parse_log_datetime(
+    log: str
+) -> datetime.datetime:
+    # now = datetime.datetime.now()
+    date, time, _ = log.split(' ', 2)
+    # 12-07 16:01:30.000
+    return datetime.datetime.strptime(f'{date} {time}', '%m-%d %H:%M:%S.%f')

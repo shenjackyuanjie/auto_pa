@@ -146,7 +146,7 @@ async def pull_app_in_categories():
             logger.info(f"点击分类 [{text}]")
             await hdc.click_by_bounds(bounds)
 
-            await anyio.sleep(0.75)
+            await anyio.sleep(1.25)
             # start pull apps
             await next_pull_apps_in_categories()
             
@@ -179,7 +179,8 @@ async def get_not_exists_apps(
 async def find_app_link_in_logs(
     result: Future
 ):
-    hilog = await hdc.advanced_hilog(("-e", "dashboard_shared", "-T", "JSAPP"), ("-m", "1", "dashboard_shared"))
+    hilog = await hdc.advanced_hilog(("-e", "dashboard_shared", "-T", "JSAPP"), ("-m", "1"), "dashboard_shared")
+    print(hilog)
     result.set_result(hilog[-1])
     return hilog
     
@@ -221,11 +222,12 @@ async def click_app_in_category_and_share(
     link_fut: Future[str] = Future()
     async with anyio.create_task_group() as task_group:
         task_group.start_soon(find_app_link_in_logs, link_fut)
+        await anyio.sleep(0.5)
         task_group.start_soon(hdc.click_by_bounds, utils.parse_bounds(gallery_view_btn))
 
     await link_fut.wait()
     parse_res = utils.parse_input_split_links_pkgs_and_app_ids(link_fut.result())
-    await anyio.sleep(0.5)
+    await anyio.sleep(1)
     await hdc.click_by_bounds(utils.parse_bounds(back_btn))
     if parse_res.empty():
         logger.error(f"没有找到包名 [{app_name}]")

@@ -1,11 +1,13 @@
 # 限制输入
 from dataclasses import dataclass
+import datetime
 import json
 import os
 from pathlib import Path
 from typing import Any, Optional
 import anyio
 from .logger import logger
+from .utils import parse_log_datetime
 
 lock = anyio.Semaphore(5)
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
@@ -45,7 +47,7 @@ async def shell(
     res = (await _exec(
         *("shell", *args),
         timeout=timeout
-    )).stdout.decode("utf-8")
+    )).stdout.decode("utf-8", errors="ignore")
     return res
 
 async def hilog(
@@ -64,11 +66,14 @@ class AdvancedProcess:
     async def __aenter__(self):
         self._tg = anyio.create_task_group()
         await self._tg.__aenter__()
+        cmd = [
+            hdc_path,
+            *self.args
+        ]
+        command = " ".join(cmd)
+        logger.debug(f"hdc [{command}]",)
         self._process = await anyio.open_process(
-            [
-                hdc_path,
-                *self.args
-            ]
+            cmd
         )
         if self.timeout is not None:
             self._tg.start_soon(self._timeout_exit)
@@ -107,8 +112,9 @@ class AdvancedProcess:
         assert self._process is not None, "process not started"
         assert self._tg is not None, "task group not started"
         assert self._process.stdout
-        async for line in self._process.stdout:
-            yield line.decode("utf-8")
+        while self._process is not None and self._process.returncode is None:
+            async for line in self._process.stdout:
+                yield line.decode("utf-8")
 
     def __del__(self):
         if self._process is not None and not self._process.returncode is None:  # noqa: E714
@@ -121,9 +127,17 @@ class AdvancedProcess:
 async def advanced_hilog(
     hilog_arg: tuple[str, ...],
     grep_arg: tuple[str, ...],
+    grep_content: str,
     count: int = 1,
     timeout: Optional[float] = None,
 ) -> list[str]:
+    # first pull last log
+    start_line = (await shell(
+        "hilog", *hilog_arg, "-z", "10000",
+    )).splitlines()
+    start_time = parse_log_datetime(start_line[-1]) if start_line else datetime.datetime.now().replace(year=1900)
+    if len(start_line) == 1:
+        start_time -= datetime.timedelta(seconds=1)
     res = []
     async with lock:
         async with AdvancedProcess(
@@ -133,13 +147,23 @@ async def advanced_hilog(
             "|",
             "grep",
             *grep_arg,
+            grep_content,
             timeout=timeout
         ) as process:
             async for line in process:
+                line = line.strip()
+                print(line)
+                current_time = parse_log_datetime(line)
+                print(current_time, start_time)
+                if current_time <= start_time or grep_content not in line:
+                    continue
+                print(line)
                 res.append(line)
+                print(res)
                 if len(res) >= count:
+                    print("exit")
                     break
-                
+            print(len(res))
     return res
 
 
