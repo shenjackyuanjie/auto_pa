@@ -1,12 +1,12 @@
 import argparse
 from dataclasses import dataclass
-import random
 from typing import Optional
 import anyio
 import src.hdc as hdc
 import src.utils as utils
 import src.hmgallery as gallery
 from src.logger import logger
+from tianxiu2b2t.anyio.future import Future
 
 
 argument = argparse.ArgumentParser()
@@ -24,13 +24,6 @@ class AppInCategory:
 main_layout_res = None
 app_categories_res = None
 app_categories_size = None
-# app_categories_branches: list[utils.JSON_PATH] = [
-#     ['children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 2, 'children', 0, 'children', 0, 'children', 0, 'children', 1, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children'],
-#     ['children', 0, 'children'],
-# ]
-# apps_in_category_path: utils.JSON_PATH = ['children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 1, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children', 0, 'children',]
-# apps_in_category_app_name = ['children', 0, 'attributes', 'text']
-
 skip_categories = []
 submit_username = ''
 share_layout_res = None
@@ -170,7 +163,7 @@ async def pull_app_in_categories():
 async def get_not_exists_apps(
     apps: list[str]
 ) -> list[str]:
-    # return apps
+    return apps
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
@@ -178,6 +171,14 @@ async def get_not_exists_apps(
             continue
         not_exists_apps.append(app)
     return not_exists_apps
+
+async def find_app_link_in_logs(
+    result: Future
+):
+    hilog = await hdc.advanced_hilog(("-e", "dashboard_shared", "-T", "JSAPP"), ("-m", "1", "dashboard_shared"))
+    result.set_result(hilog[-1])
+    return hilog
+    
 
 async def click_app_in_category_and_share(
     app_name: str,
@@ -213,10 +214,14 @@ async def click_app_in_category_and_share(
     share_with_gallery_view_page = share_with_gallery_view_page_res
 
     gallery_view_btn = utils.find_json_value_by_prev_path(share_with_gallery_view_page, utils.find_json_value_as_path(share_with_gallery_view_page, "按已有信息投稿到看板")[0])['bounds']
-    await hdc.click_by_bounds(utils.parse_bounds(gallery_view_btn))
-    
-    hilog = await hdc.hilog("-e", '"share"', "-T", "JSAPP", "-z", "10000")
-    parse_res = utils.parse_input_split_links_pkgs_and_app_ids(hilog)
+    link_fut: Future[str] = Future()
+    async with anyio.create_task_group() as task_group:
+        task_group.start_soon(find_app_link_in_logs, link_fut)
+        task_group.start_soon(hdc.click_by_bounds, utils.parse_bounds(gallery_view_btn))
+
+    await link_fut.wait()
+    parse_res = utils.parse_input_split_links_pkgs_and_app_ids(link_fut.result())
+    await anyio.sleep(0.5)
     await hdc.click_by_bounds(utils.parse_bounds(back_btn))
     if parse_res.empty():
         logger.error(f"没有找到包名 [{app_name}]")

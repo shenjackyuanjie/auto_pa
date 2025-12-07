@@ -1,36 +1,47 @@
 # 限制输入
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 import anyio
+from .logger import logger
 
-lock = anyio.Semaphore(1)
+lock = anyio.Semaphore(5)
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
 _main_screen = None
 
+@dataclass
+class HDCExecProcess:
+    ...
+
 async def _exec(
     *args: str,
-    timeout: float = 30,
+    timeout: Optional[float] = 30,
 ):
     with anyio.fail_after(
         timeout
     ):
         async with lock:
+            cmd = [
+                hdc_path,
+                *args
+            ]
+            command = " ".join(cmd)
+            logger.debug(f"hdc [{command}]",)
             res = await anyio.run_process(
-                [
-                    hdc_path,
-                    *args
-                ],
+                cmd,
             )
         if res.returncode != 0:
             raise RuntimeError(res.stderr.decode("utf-8"))
         return res
+    
 
 async def shell(
     *args: str,
     timeout: float = 10,
 ) -> str:
+    # quote_args = (shlex.quote(arg) for arg in args)
     res = (await _exec(
         *("shell", *args),
         timeout=timeout
@@ -42,6 +53,78 @@ async def hilog(
     timeout: float = 10,
 ) -> str:
     return await shell(*("hilog", *args), timeout=timeout)
+
+class AdvancedProcess:
+    def __init__(self, *args: str, timeout: Optional[float] = None):
+        self.args = args
+        self._process = None
+        self._tg = None
+        self.timeout = timeout
+
+    async def __aenter__(self):
+        self._tg = anyio.create_task_group()
+        await self._tg.__aenter__()
+        self._process = await anyio.open_process(
+            [
+                hdc_path,
+                *self.args
+            ]
+        )
+        if self.timeout is not None:
+            self._tg.start_soon(self._timeout_exit)
+        return self
+    
+    def force_exit(self):
+        assert self._process is not None, "process not started"
+        self._process.terminate()
+
+    async def _timeout_exit(self):
+        try:
+            with anyio.fail_after(self.timeout):
+                self.force_exit()
+        except TimeoutError:
+            pass
+        except Exception as e:
+            raise e
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        assert self._process is not None, "process not started"
+        assert self._tg is not None, "task group not started"
+        await self._tg.__aexit__(exc_type, exc_val, exc_tb)
+        await self._process.wait()
+
+    async def __aiter__(self):
+        assert self._process is not None, "process not started"
+        assert self._tg is not None, "task group not started"
+        assert self._process.stdout
+        async for line in self._process.stdout:
+            yield line.decode("utf-8")
+
+async def advanced_hilog(
+    hilog_arg: tuple[str, ...],
+    grep_arg: tuple[str, ...],
+    count: int = 1,
+    timeout: Optional[float] = None,
+) -> list[str]:
+    res = []
+    async with lock:
+        async with AdvancedProcess(
+            "shell",
+            "hilog",
+            *hilog_arg,
+            "|",
+            "grep",
+            *grep_arg,
+            timeout=timeout
+        ) as process:
+            async for line in process:
+                res.append(line)
+                if len(res) >= count:
+                    break
+    return res
+
+
+            
 
 
 async def get_main_screen_size(force: bool = False):
