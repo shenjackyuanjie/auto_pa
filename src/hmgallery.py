@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass
 from typing import Any, Optional, TypedDict
+import anyio
 import httpx
 from tianxiu2b2t.anyio.concurrency import gather
 
@@ -39,6 +40,15 @@ class CommentInfo:
         # pop value is None
         return {k: v for k, v in data.items() if v is not None}
 
+@dataclass
+class SearchParams:
+    sort: str = "download_count"
+    desc: bool = True
+    page_size: int = 50
+    search_key: str = "name"
+    search_value: str = ""
+    search_exact: bool = True
+
 
 class HMGallery:
     def __init__(self, base_url: str):
@@ -49,8 +59,26 @@ class HMGallery:
         *names: str,
     ) -> dict[str, bool]:
         return dict(zip(names, await gather(*(self.search_app_name_exists(name) for name in names))))
-        
-
+    
+    async def _search_list(
+        self,
+        idx: int,
+        params: SearchParams,
+        _retries: int = 0,
+    ) -> SearchListResponse:
+        if _retries > 3:
+            raise Exception("search list failed")
+        try:
+            resp = await self.client.get(f"apps/list/{idx}", params=asdict(params))
+        except Exception as e:
+            logger.traceback(f"search list failed: {e}")
+            return await self._search_list(idx, params, _retries + 1)
+        if resp.status_code == 200:
+            response: BaseResponse = resp.json()
+            data: SearchListResponse = response["data"]
+            return data
+        return await self._search_list(idx, params, _retries + 1)
+    
     async def search_app_name_exists(
         self,
         name: str,
@@ -58,7 +86,6 @@ class HMGallery:
         if cache.get(f"app:{name}", False) is True:
             logger.debug(f"[{name}] is exists")
             return True
-        idx = 0
         params = {
             "sort": "download_count",
             "desc": True,
@@ -67,22 +94,21 @@ class HMGallery:
             "search_value": name,
             "search_exact": True,
         }
+        idx = 0
         while 1:
-            stable_count = 0
-            while (stable_count := stable_count + 1) < 3:
-                current_idx = (idx := idx + 1)
-                resp = await self.client.get(f"apps/list/{current_idx}", params=params)
-                if resp.status_code == 200:
-                    response: BaseResponse = resp.json()
-                    data: SearchListResponse = response["data"]
-                    # find name
-                    for app in data["data"]:
-                        if app["name"].lower() == name.lower():
-                            cache.set(f"app:{name}", True, 3600)
-                            return True
-                    if data["total_pages"] <= current_idx:
-                        return False
-
+            current_idx = (idx := idx + 1)
+            try:
+                data = await self._search_list(current_idx, SearchParams(**params))
+            except Exception as e:
+                logger.traceback(f"search app {name} failed: {e}")
+                continue
+            # find name
+            for app in data["data"]:
+                if app["name"].lower() == name.lower():
+                    cache.set(f"app:{name}", True, 3600)
+                    return True
+            if data["total_pages"] <= current_idx:
+                return False
         return False
 
     async def submit_apps(
@@ -92,13 +118,11 @@ class HMGallery:
     ) -> dict[str, bool]:
         return dict(zip(pkgs, await gather(*(self.submit_app(pkg, comment.clone() if comment else None) for pkg in pkgs))))
     
-    async def submit_app(
+    async def _submit_app_impl(
         self,
         pkg: str,
-        comment: Optional[CommentInfo] = None
+        comment: CommentInfo
     ) -> bool:
-        comment = (comment or CommentInfo())
-        comment.platform = "auto_pa"
         resp = await self.client.post("submit", json={
             "pkg_name": pkg,
             "comment": comment.to_json()
@@ -108,6 +132,23 @@ class HMGallery:
         response: BaseResponse = resp.json()
         if response["success"]:
             return True
+        return False
+    
+    async def submit_app(
+        self,
+        pkg: str,
+        comment: Optional[CommentInfo] = None
+    ) -> bool:
+        comment = (comment or CommentInfo())
+        comment.platform = "auto_pa"
+        retry = 0
+        while retry < 3:
+            try:
+                return await self._submit_app_impl(pkg, comment)
+            except Exception as e:
+                logger.traceback(f"submit app {pkg} failed: {e}")
+                retry += 1
+                await anyio.sleep(5)
         return False
 
 def init_gallery(
