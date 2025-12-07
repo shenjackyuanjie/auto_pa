@@ -15,6 +15,7 @@ argument.add_argument('--fast-pull', '--fp', help="Fast pull app, not check devi
 argument.add_argument('--gallery-api', '--ga', help="Use gallery api to pull app", default="https://hmos.txit.top/api")
 argument.add_argument('--username', '-u', help="Submit app with this username", required=True)
 argument.add_argument('--submit', '-s', help="In python, submit app to gallery", action="store_true")
+argument.add_argument('--skip-check-apps', '--sca', help="Skip check apps in gallery", action="store_true")
 
 @dataclass
 class AppInCategory:
@@ -30,6 +31,7 @@ share_layout_res = None
 share_with_gallery_view_page_res = None
 app_detail_layout_res = None
 submit_in_python = False
+skip_check_apps = False
 
 async def is_main_page():
     main_screen = await hdc.get_main_screen_size()
@@ -163,7 +165,9 @@ async def pull_app_in_categories():
 async def get_not_exists_apps(
     apps: list[str]
 ) -> list[str]:
-    return apps
+    if skip_check_apps:
+        return apps
+    # return apps
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
@@ -303,7 +307,7 @@ async def next_pull_apps_in_categories():
         
 
 async def main(args):
-    global skip_categories, submit_username, submit_in_python
+    global skip_categories, submit_username, submit_in_python, skip_check_apps
     logger.info("AppGallery Ciallo～ (∠・ω< )⌒★")
     logger.info("请确保当前在 [应用市场] 首页~")
 
@@ -334,6 +338,11 @@ async def main(args):
         logger.info("将在 [应用看板] 提交数据")
     else:
         logger.info("将在 [Python] 提交数据")
+
+    args_skip_check_apps = args.skip_check_apps
+    if args_skip_check_apps:
+        logger.info("跳过检查应用是否存在")
+        skip_check_apps = True
 
     args_fast_pull = args.fast_pull
     if args_fast_pull:

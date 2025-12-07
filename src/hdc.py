@@ -100,6 +100,13 @@ class AdvancedProcess:
         async for line in self._process.stdout:
             yield line.decode("utf-8")
 
+    def __del__(self):
+        if self._process is not None:
+            self._process.terminate()
+        if self._tg is not None:
+            self._tg.cancel_scope.cancel()
+        logger.debug("AdvancedProcess deleted")
+
 async def advanced_hilog(
     hilog_arg: tuple[str, ...],
     grep_arg: tuple[str, ...],
