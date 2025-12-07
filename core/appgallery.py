@@ -233,7 +233,7 @@ async def pull_apps_in_categories():
     full_apps_list: set[str] = set()
     stable_count = 0
     while stable_count < 2:
-        await anyio.sleep(0.25 + random.randint(3, 5) * 0.1)
+        await anyio.sleep(0.25)
         res = await hdc.dump_layout_to_json()
         list_items = utils.find_json_value_by_prev_path(res, utils.find_json_value_as_path(res, "List")[0], 2)
         
@@ -259,6 +259,7 @@ async def pull_apps_in_categories():
             if app not in not_exists_apps:
                 continue
             logger.success(f"发现新应用 [{app}]")
+            await anyio.sleep(0.25)
             shared_res = await click_app_in_category_and_share(app, current_apps_bounds[app])
             if not shared_res:
                 logger.error(f"应用 [{app}] 分享不了？")
