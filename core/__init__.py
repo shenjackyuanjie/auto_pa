@@ -1,5 +1,8 @@
 import argparse
-from .appgallery import main as gallery_main, argument as gallery_argument
+import asyncio
+
+import anyio
+from .appgallery import main as gallery_main, exit_main as gallery_exit, argument as gallery_argument
 from src.logger import logger
 
 def create_main_parser():
@@ -27,11 +30,14 @@ def create_main_parser():
     )
     
     # 添加 gallery 专用的参数（如果需要）
-    gallery_parser.set_defaults(func=gallery_main)
+    gallery_parser.set_defaults(func=gallery_main, exit=gallery_exit)
     
     return main_parser, subparsers
 
-async def cli_main():
+def cli_main():
+    anyio.run(main)
+
+async def main():
     """CLI 主入口函数"""
     parser, _ = create_main_parser()
     args = parser.parse_args()
@@ -39,9 +45,14 @@ async def cli_main():
     if hasattr(args, 'func'):
         try:
             await args.func(args)
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
             logger.warning("操作被用户中断")
         except Exception:
             logger.traceback("错误")
+
+        finally:
+            if hasattr(args, 'exit'):
+                await args.exit()
+
     else:
         parser.print_help()

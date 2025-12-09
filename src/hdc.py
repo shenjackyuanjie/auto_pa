@@ -42,7 +42,14 @@ class HilogProcess:
     
     def force_exit(self):
         assert self._process is not None, "process not started"
+        self._process.kill()
+
+    async def exit(self):
+        assert self._process is not None, "process not started"
+        assert self._tg is not None, "task group not started"
+        self._tg.cancel_scope.cancel()
         self._process.terminate()
+        await self._process.wait()
 
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -81,7 +88,10 @@ class HilogProcess:
 
     def __del__(self):
         if self._process is not None and not self._process.returncode is None:  # noqa: E714
-            self._process.terminate()
+            try:
+                self._process.terminate()
+            except Exception:
+                ...
             self._process = None
         if self._tg is not None:
             self._tg.cancel_scope.cancel()

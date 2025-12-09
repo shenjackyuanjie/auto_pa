@@ -322,6 +322,12 @@ async def start_hilog_process(
     task_group.start_soon(hilog_process.run_forever)
     
 
+async def exit_main():
+    logger.info("退出")
+    # if hilog_process is not None:
+    if hilog_process is not None:
+        await hilog_process.exit()
+
 async def main(args):
     global skip_categories, submit_username, submit_in_python, skip_check_apps
     logger.info("AppGallery Ciallo～ (∠・ω< )⌒★")
@@ -375,7 +381,7 @@ async def main(args):
 
         main_tg.cancel_scope.cancel()
         assert hilog_process is not None
-        hilog_process.force_exit()
+        await hilog_process.exit()
 
 
     
