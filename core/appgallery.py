@@ -2,6 +2,7 @@ import argparse
 from dataclasses import dataclass
 from typing import Optional
 import anyio
+import anyio.abc
 import src.hdc as hdc
 import src.utils as utils
 import src.hmgallery as gallery
@@ -32,6 +33,7 @@ share_with_gallery_view_page_res = None
 app_detail_layout_res = None
 submit_in_python = False
 skip_check_apps = False
+hilog_process = None
 
 async def is_main_page():
     main_screen = await hdc.get_main_screen_size()
@@ -179,10 +181,13 @@ async def get_not_exists_apps(
 async def find_app_link_in_logs(
     result: Future
 ):
-    hilog = await hdc.advanced_hilog(("-e", "dashboard_shared", "-T", "JSAPP"), ("-m", "1"), "dashboard_shared")
-    print(hilog)
-    result.set_result(hilog[-1])
-    return hilog
+    global hilog_process
+    assert hilog_process is not None
+    while line := await hilog_process.readline():
+        if "dashboard_shared" in line:
+            result.set_result(line)
+            break
+    return []
     
 
 async def click_app_in_category_and_share(
@@ -307,6 +312,15 @@ async def next_pull_apps_in_categories():
     exit_btn = utils.parse_bounds(utils.find_json_value_by_path(apps_category_res, path)['bounds'])
     await hdc.click_by_bounds(exit_btn, 0.25)
         
+async def start_hilog_process(
+    task_group: anyio.abc.TaskGroup
+):
+    global hilog_process
+    hilog_process = hdc.HilogProcess(
+        "-e", "dashboard_shared", "-T", "JSAPP"
+    )
+    task_group.start_soon(hilog_process.run_forever)
+    
 
 async def main(args):
     global skip_categories, submit_username, submit_in_python, skip_check_apps
@@ -346,15 +360,22 @@ async def main(args):
         logger.info("跳过检查应用是否存在")
         skip_check_apps = True
 
-    args_fast_pull = args.fast_pull
-    if args_fast_pull:
-        logger.info("快速模式，需要在应用分类中的应用列表")
-        await next_pull_apps_in_categories()
-        return
+    async with anyio.create_task_group() as main_tg:
+        await start_hilog_process(main_tg)
 
-    await click_bottom_bar_app()
-    await click_app_categories()
-    await pull_app_in_categories()
+        args_fast_pull = args.fast_pull
+        if args_fast_pull:
+            logger.info("快速模式，需要在应用分类中的应用列表")
+            await next_pull_apps_in_categories()
+            return
+
+        await click_bottom_bar_app()
+        await click_app_categories()
+        await pull_app_in_categories()
+
+        main_tg.cancel_scope.cancel()
+        assert hilog_process is not None
+        hilog_process.force_exit()
 
 
     

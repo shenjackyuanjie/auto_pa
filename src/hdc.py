@@ -1,5 +1,4 @@
 # 限制输入
-from dataclasses import dataclass
 import datetime
 import json
 import os
@@ -13,9 +12,80 @@ lock = anyio.Semaphore(5)
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
 _main_screen = None
 
-@dataclass
-class HDCExecProcess:
-    ...
+
+class HilogProcess:
+    def __init__(self, *args: str):
+        self._args = args
+        self._process = None
+        self._tg = None
+
+    async def run_forever(self):
+        async with self:
+            assert self._process is not None, "process not started"
+            await self._process.wait()
+
+    async def __aenter__(self):
+        self._tg = anyio.create_task_group()
+        await self._tg.__aenter__()
+        cmd = [
+            hdc_path,
+            "shell",
+            "hilog",
+            *self._args
+        ]
+        command = " ".join(cmd)
+        logger.debug(f"hdc [{command}]",)
+        self._process = await anyio.open_process(
+            cmd
+        )
+        return self
+    
+    def force_exit(self):
+        assert self._process is not None, "process not started"
+        self._process.terminate()
+
+    
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        assert self._process is not None, "process not started"
+        assert self._tg is not None, "task group not started"
+        await self._tg.__aexit__(exc_type, exc_val, exc_tb)
+        self._tg = None
+        
+        try:
+            with anyio.fail_after(10):
+                self._process.kill()
+                await self._process.wait()
+        except TimeoutError:
+            pass
+        if self._process.returncode is None:  # noqa: E714
+            self._process.terminate()
+        self._process = None
+
+    @property
+    def _stdout(self):
+        assert self._process is not None, "process not started"
+        assert self._tg is not None, "task group not started"
+        assert self._process.stdout
+        return self._process.stdout
+
+    async def readline(self, encoding: str = "utf-8", errors: str = "ignore"):
+        async for line in self._stdout:
+            return line.decode(encoding, errors=errors)
+
+    async def __aiter__(self):
+        assert self._process is not None, "process not started"
+        assert self._tg is not None, "task group not started"
+        assert self._process.stdout
+        while self._process is not None and self._process.returncode is None:
+            yield await self.readline("utf-8")
+
+    def __del__(self):
+        if self._process is not None and not self._process.returncode is None:  # noqa: E714
+            self._process.terminate()
+            self._process = None
+        if self._tg is not None:
+            self._tg.cancel_scope.cancel()
+        logger.debug("HILog Process deleted")
 
 async def _exec(
     *args: str,
