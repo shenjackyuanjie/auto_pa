@@ -210,8 +210,7 @@ async def click_app_in_category_and_share(
     # await anyio.sleep(0.75) # wait for network pull
 
 
-    await hdc.click_by_bounds(utils.parse_bounds(share_btn))
-
+    await hdc.click_by_bounds(utils.parse_bounds(share_btn), 1.25)
     if share_layout_res is None:
         share_layout_res = await hdc.dump_layout_to_json()
     share_layout = share_layout_res
