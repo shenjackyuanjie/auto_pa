@@ -34,6 +34,7 @@ app_detail_layout_res = None
 submit_in_python = False
 skip_check_apps = False
 hilog_process = None
+tablet: bool = False
 
 async def is_main_page():
     main_screen = await hdc.get_main_screen_size()
@@ -44,7 +45,7 @@ async def is_main_page():
     except Exception:
         return False
     bounds = utils.parse_bounds(value['bounds'])
-    phone_mode = await hdc.is_phone_mode()
+    phone_mode = device_type == 'phone'
     if phone_mode:     # 判断是不是在屏幕下方
         result = bounds[1] > main_screen[1] * 0.8
     else:
@@ -210,7 +211,7 @@ async def click_app_in_category_and_share(
     # await anyio.sleep(0.75) # wait for network pull
 
 
-    await hdc.click_by_bounds(utils.parse_bounds(share_btn), 1.25)
+    await hdc.click_by_bounds(utils.parse_bounds(share_btn), 0.75 if device_type == 'phone' else 1.75)
     if share_layout_res is None:
         share_layout_res = await hdc.dump_layout_to_json()
     share_layout = share_layout_res
@@ -328,7 +329,7 @@ async def exit_main():
         await hilog_process.exit()
 
 async def main(args):
-    global skip_categories, submit_username, submit_in_python, skip_check_apps
+    global skip_categories, submit_username, submit_in_python, skip_check_apps, device_type
     logger.info("AppGallery Ciallo～ (∠・ω< )⌒★")
     logger.info("请确保当前在 [应用市场] 首页~")
 
@@ -358,12 +359,15 @@ async def main(args):
     if not args_submit:
         logger.info("将在 [应用看板] 提交数据")
     else:
+        logger.warning("现在会在 [应用看板] 提交完数据才会返回的")
         logger.info("将在 [Python] 提交数据")
 
     args_skip_check_apps = args.skip_check_apps
     if args_skip_check_apps:
         logger.info("跳过检查应用是否存在")
         skip_check_apps = True
+
+    device_type = await hdc.get_device_type()
 
     async with anyio.create_task_group() as main_tg:
         await start_hilog_process(main_tg)
