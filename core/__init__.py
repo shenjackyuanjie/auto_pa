@@ -5,6 +5,8 @@ from typing import Optional
 from src import hdc, hmgallery as gallery, utils
 from src.logger import logger
 from src.utils import find_json_value_as_path, find_json_value_by_prev_path
+from tianxiu2b2t.utils import runtime
+from tianxiu2b2t.units import format_count_time
 
 @dataclass
 class StorageValue:
@@ -30,9 +32,11 @@ skip_app_categories = args.skip_app_categories
 skip_categories = args.skip_categories
 
 async def main():
+    start_time = runtime.perf_counter_ns()
     device_type = await hdc.get_device_type() 
-    logger.info(f'当前设备类型: [{device_type}]')
-    logger.info(f'App Gallery API: [{gallery_base_url}]')
+    logger.info("AppGallery Ciallo～ (∠・ω< )⌒★")
+    logger.info(f'当前设备类型 [{device_type}]')
+    logger.info(f'App Gallery API [{gallery_base_url}]')
     if skip_app_check:
         logger.info('跳过应用检查')
     gallery.init_gallery(gallery_base_url)
@@ -41,22 +45,25 @@ async def main():
         hilog_process = p
         if fast_pull:
             await start_pull_apps()
-            return
-        await open_gallery_app()
-        if not skip_app_categories:
-            await go_app_page()
+        else:
+            await open_gallery_app()
+            if not skip_app_categories:
+                await go_app_page()
+                await go_categories_page()
+                await pull_categories()
+            else:
+                logger.info('跳过应用分类')
+            await go_game_page()
             await go_categories_page()
             await pull_categories()
-        else:
-            logger.info('跳过应用分类')
-        await go_game_page()
-        await go_categories_page()
-        await pull_categories()
+
+    end_time = runtime.perf_counter_ns()
+    logger.success(f'任务完成！耗时 [{format_count_time(end_time - start_time)}]')
 
 async def open_gallery_app():
     logger.info('正在打开 [华为应用市场]...')
-    await hdc.shell('aa force-stop com.huawei.hmsapp.appgallery')
-    await hdc.shell('aa start -a MainAbility -b com.huawei.hmsapp.appgallery')
+    await hdc.shell('aa', 'force-stop', 'com.huawei.hmsapp.appgallery')
+    await hdc.shell('aa', 'start', '-a', 'MainAbility', '-b', 'com.huawei.hmsapp.appgallery')
     logger.success('打开 [华为应用市场] 成功！')
     await asyncio.sleep(3)
 
@@ -66,7 +73,7 @@ async def go_app_page():
         global_var.tab_app_btn = find_json_value_by_prev_path(index_layout, find_json_value_as_path(index_layout, "BadgeImage.sys.symbol.bag_fill")[0])['bounds']
     btn = global_var.tab_app_btn
     assert btn is not None
-    logger.debug(f'应用按钮位置: [{btn}]')
+    logger.debug(f'应用按钮位置 [{btn}]')
     await hdc.click_by_bounds(btn)
 
 async def go_game_page():
@@ -75,7 +82,7 @@ async def go_game_page():
         global_var.tab_app_btn = find_json_value_by_prev_path(index_layout, find_json_value_as_path(index_layout, "BadgeImage.sys.symbol.game_fill")[0])['bounds']
     btn = global_var.tab_app_btn
     assert btn is not None
-    logger.debug(f'应用按钮位置: [{btn}]')
+    logger.debug(f'游戏按钮位置 [{btn}]')
     await hdc.click_by_bounds(btn)
 
 async def go_categories_page():
@@ -83,7 +90,6 @@ async def go_categories_page():
     btn = find_json_value_by_prev_path(layout, find_json_value_as_path(layout, "Paf_Lantern_Image")[2])['bounds']
     await hdc.click_by_bounds(btn)
 
-    ...
 
 async def pull_categories():
     pulled_categories = []
@@ -110,8 +116,9 @@ async def pull_categories():
             if text in skip_categories:
                 continue
 
-            await hdc.click_by_bounds(btn_pos)
+            await hdc.click_by_bounds(btn_pos, 1.75)
             await asyncio.sleep(1)
+            logger.info(f'正在拉取分类 [{text}]...')
             await start_pull_apps()
 
         if current_categories_len == len(pulled_categories):
@@ -135,10 +142,12 @@ async def get_not_exists_apps(
     return not_exists_apps
 
 async def start_pull_apps():
-    logger.info('正在开始拉取应用...')
+    # logger.info('正在开始拉取应用...')
     apps = []
+    new_apps = []
     exit_btn = None
-    while 10:
+    start_time = runtime.perf_counter_ns()
+    while 1:
         current_apps_len = len(apps)
         layout = await hdc.dump_layout_to_json()
         app_list = find_json_value_by_prev_path(layout, find_json_value_as_path(layout, "List")[0], 2)
@@ -159,19 +168,21 @@ async def start_pull_apps():
             apps_pos[text] = app_pos
             logger.debug(f'[{text}] [{app_pos}]')
 
-        new_apps = await get_not_exists_apps(cur_apps)
-        for app in new_apps:
+        pending_new_apps = await get_not_exists_apps(cur_apps)
+        for app in pending_new_apps:
             logger.success(f'发现新应用 [{app}]')
             await hdc.click_by_bounds(apps_pos[app], 0.85)
             # detail 
             await share_app(app)
+            new_apps.append(app)
 
 
         await hdc.simple_roll_down(0.5, 0.175, 0.8)
         if current_apps_len == len(apps):
             break
         # break
-
+    end_time = runtime.perf_counter_ns()
+    logger.info(f'拉取应用完成, 共 [{len(apps)}] 个应用，新应用 [{len(new_apps)}] 个，耗时 [{format_count_time(end_time - start_time)}]')
     exit_btn = find_json_value_by_prev_path(layout, find_json_value_as_path(layout, "BackButton")[0])['bounds']
     await hdc.click_by_bounds(exit_btn)
 
