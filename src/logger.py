@@ -1,33 +1,43 @@
 import logging
-import os
 import sys
 import traceback
 from loguru import logger as Logger
 
 LOGGER_FORMAT = "<green>[{time:YYYY-MM-DD HH:mm:ss}]</green> <level>[{level}] <yellow>[{name}:{function}:{line}]</yellow>: {message}</level>"
-DEBUG = os.getenv("DEBUG", "False").lower() == "true"
-LOG_FILE = os.getenv("LOG", "False").lower() == "true"
 
 
 _logger = Logger.opt(depth=2)
 _logger.remove()
-if LOG_FILE:
-    _logger.add(
-        "./logs/{time:YYYY-MM-DD}.log",
-        format=LOGGER_FORMAT,
-        retention="90 days",
-        encoding="utf-8",
-    )
-_logger.add(
-    sys.stdout,
-    format=LOGGER_FORMAT,
-    level="DEBUG" if DEBUG else "INFO",
-    colorize=True,
-)
+# if LOG_FILE:
+#     _logger.add(
+#         "./logs/{time:YYYY-MM-DD}.log",
+#         format=LOGGER_FORMAT,
+#         retention="90 days",
+#         encoding="utf-8",
+#     )
+# _logger.add(
+#     sys.stdout,
+#     format=LOGGER_FORMAT,
+#     level="DEBUG" if DEBUG else "INFO",
+#     colorize=True,
+# )
 
 class Loglogger:
-    def __init__(self, log = _logger) -> None:
+    def __init__(self, log = _logger, log_file: bool = False, verbose: bool = False) -> None:
         self.log = log
+        if log_file:
+            _logger.add(
+                "./logs/{time:YYYY-MM-DD}.log",
+                format=LOGGER_FORMAT,
+                retention="90 days",
+                encoding="utf-8",
+            )
+        _logger.add(
+            sys.stdout,
+            format=LOGGER_FORMAT,
+            level="DEBUG" if verbose else "INFO",
+            colorize=True,
+        )
     def raw_log(self, level, message: str, *values):
         self.log.log(level, message % values)
     def _log_with_args(self, level, *args, **kwargs):
@@ -55,7 +65,15 @@ class Loglogger:
         error = traceback.format_exc()
         self.log.debug(error)
 
-logger = Loglogger()
+logger: 'Loglogger' = None # type: ignore
+
+
+def init_logger(
+    log_file: bool = False, verbose: bool = False
+):
+    global logger
+    print(log_file, verbose)
+    logger = Loglogger(log_file=log_file, verbose=verbose)
 
 
 def _log(*values):

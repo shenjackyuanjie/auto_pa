@@ -6,8 +6,11 @@ try_get.py
 .python-version
 .lh
 .cache
+.venv
 
 
 # Added by cargo
 
 /target
+
+/hypium

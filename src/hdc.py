@@ -1,12 +1,13 @@
 # 限制输入
-import datetime
+import asyncio
 import json
 import os
 from pathlib import Path
 from typing import Any, Optional
 import anyio
+
+from . import utils
 from .logger import logger
-from .utils import parse_log_datetime
 
 lock = anyio.Semaphore(5)
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
@@ -17,7 +18,6 @@ class HilogProcess:
     def __init__(self, *args: str):
         self._args = args
         self._process = None
-        self._tg = None
 
     async def run_forever(self):
         async with self:
@@ -25,77 +25,82 @@ class HilogProcess:
             await self._process.wait()
 
     async def __aenter__(self):
-        self._tg = anyio.create_task_group()
-        await self._tg.__aenter__()
-        cmd = [
-            hdc_path,
-            "shell",
-            "hilog",
-            *self._args
-        ]
+        cmd = [hdc_path, "shell", "hilog", *self._args]
         command = " ".join(cmd)
-        logger.debug(f"hdc [{command}]",)
-        self._process = await anyio.open_process(
-            cmd
+        logger.debug(f"hdc [{command}]")
+        
+        self._process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL
         )
         return self
-    
+
     def force_exit(self):
-        assert self._process is not None, "process not started"
-        self._process.kill()
+        if self._process and self._process.returncode is None:
+            self._process.kill()
 
     async def exit(self):
-        assert self._process is not None, "process not started"
-        assert self._tg is not None, "task group not started"
-        self._tg.cancel_scope.cancel()
+        if self._process is None or self._process.returncode is not None:
+            return
         self._process.terminate()
         await self._process.wait()
 
-    
     async def __aexit__(self, exc_type, exc_val, exc_tb):
-        assert self._process is not None, "process not started"
-        assert self._tg is not None, "task group not started"
-        await self._tg.__aexit__(exc_type, exc_val, exc_tb)
-        self._tg = None
+        if self._process is None:
+            return
         
+        # 关键修改：不再使用 wait_for 包裹整个退出逻辑。
+        # 这样，当外部发送 CancelledError (如 Ctrl+C) 时，它会被直接传播出去，不会被捕获。
         try:
-            with anyio.fail_after(10):
-                self._process.kill()
-                await self._process.wait()
-        except TimeoutError:
-            pass
-        if self._process.returncode is None:  # noqa: E714
-            self._process.terminate()
-        self._process = None
+            # 尝试优雅退出，但设置一个简单的超时后台任务
+            await asyncio.wait_for(self.exit(), timeout=10)
+        except asyncio.TimeoutError:
+            # 仅捕获超时异常，不捕获 CancelledError
+            logger.warning("Process exit timed out, forcing kill.")
+            self.force_exit()
+            # 即使强制终止，也等待一下避免僵尸进程
+            await self._process.wait()
+        except asyncio.CancelledError:
+            # 如果收到取消信号（如 Ctrl+C），先强制杀死子进程，然后重新抛出该异常
+            logger.info("Received cancellation, killing subprocess.")
+            self.force_exit()
+            # 不等待进程结束，立即重新抛出取消异常，允许上层处理
+            raise
+        finally:
+            # 无论是否发生异常，都确保清理进程引用
+            self._process = None
+            logger.debug("Hilog Process cleaned up.")
 
     @property
     def _stdout(self):
-        assert self._process is not None, "process not started"
-        assert self._tg is not None, "task group not started"
-        assert self._process.stdout
+        if self._process is None:
+            raise RuntimeError("Process not started")
         return self._process.stdout
 
-    async def readline(self, encoding: str = "utf-8", errors: str = "ignore"):
-        async for line in self._stdout:
-            return line.decode(encoding, errors=errors)
+    async def readline(self, encoding: str = "utf-8", errors: str = "ignore") -> str:
+        if self._stdout is None:
+            raise RuntimeError("Stdout is not available")
+        line_bytes = await self._stdout.readline()
+        return line_bytes.decode(encoding, errors=errors).rstrip('\n')
 
     async def __aiter__(self):
-        assert self._process is not None, "process not started"
-        assert self._tg is not None, "task group not started"
-        assert self._process.stdout
-        while self._process is not None and self._process.returncode is None:
-            yield await self.readline("utf-8")
+        if self._stdout is None:
+            return
+        while True:
+            line = await self.readline()
+            if not line:
+                break
+            yield line
 
     def __del__(self):
-        if self._process is not None and not self._process.returncode is None:  # noqa: E714
+        if self._process is not None and self._process.returncode is None:
             try:
                 self._process.terminate()
-            except Exception:
-                ...
-            self._process = None
-        if self._tg is not None:
-            self._tg.cancel_scope.cancel()
-        logger.debug("HILog Process deleted")
+            except Exception as e:
+                logger.debug(f"Ignored error during process termination in __del__: {e}")
+        logger.debug("HilogProcess instance deleted.")
 
 async def _exec(
     *args: str,
@@ -133,7 +138,7 @@ async def shell(
 async def get_device_type(
     timeout: float = 10,
 ) -> str:
-    return await shell(*("param", "get", "const.product.devicetype"), timeout=timeout)
+    return (await shell(*("param", "get", "const.product.devicetype"), timeout=timeout)).strip()
 
 
 async def get_main_screen_size(force: bool = False):
@@ -187,9 +192,10 @@ async def click_pos(
     await shell("uinput", "-M", "-m", f"{int(x)}", f"{int(y)}", "-d", "0", "-u", "0")
 
 async def click_by_bounds(
-    bounds: tuple[float, float, float, float],
+    bounds: tuple[float, float, float, float] | str,
     wait_for: float = 0.75
 ):
+    bounds = utils.parse_bounds(bounds) if isinstance(bounds, str) else bounds
     await click_pos(
         (bounds[0] + bounds[2]) / 2,
         (bounds[1] + bounds[3]) / 2
@@ -197,15 +203,29 @@ async def click_by_bounds(
     await anyio.sleep(wait_for)
 
 async def roll_to_y(
-    x: float,
-    y: float,
+    x_scale: float,
+    y_scale: float,
     roll_distance: float,
     wait_for: float = 1.5
 ):
-    # main_screen = await get_main_screen_size()
+    main_screen = await get_main_screen_size()
     scroll = roll_distance // 15 + (1 if roll_distance % 15 != 0 else 0) # 一次，如果不满15，则向上取整
-    await shell("uinput", "-M", "-m", f"{int(x)}", f"{int(y)}", "-s", f"{int(scroll) * 15}")
+    await shell("uinput", "-M", "-m", f"{int(main_screen[0] * x_scale)}", f"{int(main_screen[1] * y_scale)}", "-s", f"{int(scroll) * 15}")
     await anyio.sleep(wait_for)
+
+async def simple_roll_down(
+    x_scale: float,
+    y_scale: float,
+    roll_scale: float,
+    wait_for: float = 1.5
+):
+    main_screen = await get_main_screen_size()
+    await roll_to_y(
+        x_scale,
+        y_scale,
+        main_screen[1] * roll_scale,
+        wait_for
+    )
 
 
 async def drag_to_back():
