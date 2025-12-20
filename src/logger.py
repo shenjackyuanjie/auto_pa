@@ -72,7 +72,6 @@ def init_logger(
     log_file: bool = False, verbose: bool = False
 ):
     global logger
-    print(log_file, verbose)
     logger = Loglogger(log_file=log_file, verbose=verbose)
 
 
