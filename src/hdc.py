@@ -1,5 +1,6 @@
 # 限制输入
 import asyncio
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,12 @@ lock = anyio.Semaphore(5)
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
 _main_screen = None
 
+@dataclass
+class Ethernet:
+    type: str
+    name: str
+    ip: Optional[str] = None
+    mac: Optional[str] = None
 
 class HilogProcess:
     def __init__(self, *args: str):
@@ -237,3 +244,29 @@ async def drag_to_back():
 
 async def reset_pointer():
     await shell("uinput", "-M", "-m", "0", "0", "-d", "0", "-u", "0")
+
+async def get_ethernets() -> list[Ethernet]:
+    res = await shell("ifconfig")
+    ethernets = res.split("\r\n\r\n")
+    eths = []
+    for ethernet in ethernets:
+        if not ethernet:
+            continue
+        lines = ethernet.split("\r\n")
+        first_line = lines[0].split("Link encap:", 1)
+        ethernet_name = first_line[0].strip()
+        first_line = first_line[1].split("  ")
+        ethernet_type = first_line[0].strip()
+
+        eth = Ethernet(ethernet_type, ethernet_name)
+        eths.append(eth)
+
+        eth.mac = first_line[1].strip().strip("HWaddr ") if len(first_line) > 1 else None
+        lines = [line.strip() for line in lines[1:]]
+        for line in lines:
+            if "inet addr:" in line:
+                inet = line.split("inet addr:")[1].split("  ")[0].strip()
+                eth.ip = inet
+    return eths
+        
+        

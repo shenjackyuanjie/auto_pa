@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 from src.logger import init_logger
+from core import add_argument
 
 main_parser = argparse.ArgumentParser()
 # verbose
@@ -8,15 +9,17 @@ main_parser = argparse.ArgumentParser()
 main_parser.add_argument("--verbose", "-v", action="store_true", help="verbose mode", default=False)
 main_parser.add_argument("--log-file", "-l", action="store_true", help="enable log file", default=False)
 
+add_argument(main_parser)
+
 if __name__ == "__main__":
     args = main_parser.parse_known_args()[0]
     init_logger(args.log_file, args.verbose)
 
     from src.logger import logger
-    from core import main
+    from core.appgallery import main
 
     try:
-        asyncio.run(main())
+        asyncio.run(main(args))
     except KeyboardInterrupt:
         logger.info("KeyboardInterrupt")
     except Exception as e:
