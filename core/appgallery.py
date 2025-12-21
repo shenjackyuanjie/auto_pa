@@ -168,7 +168,7 @@ async def pull_app_in_categories():
                 logger.warning(f"跳过分类 [{text}]")
                 continue
             logger.info(f"点击分类 [{text}]")
-            await anyio.sleep(0.25)
+            await anyio.sleep(0.75)
             await hdc.click_by_bounds(bounds)
             await anyio.sleep(1.25)
             # start pull apps
