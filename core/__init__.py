@@ -10,6 +10,7 @@ from tianxiu2b2t.units import format_count_time
 
 @dataclass
 class StorageValue:
+    phone: bool = False
     tab_app_btn: Optional[str] = None
     app_exit_btn: Optional[str] = None
     app_share_btn: Optional[str] = None
@@ -33,7 +34,8 @@ skip_categories = args.skip_categories
 
 async def main():
     start_time = runtime.perf_counter_ns()
-    device_type = await hdc.get_device_type() 
+    device_type = await hdc.get_device_type()
+    global_var.phone = (device_type == 'phone')
     logger.info("AppGallery Ciallo～ (∠・ω< )⌒★")
     logger.info(f'当前设备类型 [{device_type}]')
     logger.info(f'App Gallery API [{gallery_base_url}]')
@@ -93,11 +95,12 @@ async def go_categories_page():
 
 async def pull_categories():
     pulled_categories = []
+    idx = 1 if global_var.phone else 2
     while 1:
         current_categories_len = len(pulled_categories)
 
         layout = await hdc.dump_layout_to_json()
-        layout = find_json_value_by_prev_path(layout, find_json_value_as_path(layout, "List")[1], 2)
+        layout = find_json_value_by_prev_path(layout, find_json_value_as_path(layout, "List")[idx], 2)
         # and then fuck to find btn
         btns = find_json_value_as_path(layout, "Button")
         for btn_path in btns:
@@ -172,7 +175,7 @@ async def start_pull_apps():
         for app in pending_new_apps:
             logger.success(f'发现新应用 [{app}]')
             await hdc.click_by_bounds(apps_pos[app], 0.85)
-            # detail 
+            # detail
             await share_app(app)
             new_apps.append(app)
 
