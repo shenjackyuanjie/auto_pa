@@ -105,8 +105,8 @@ async def is_app_categories_page():
         value = utils.find_json_value_by_path(res, paths[0][:-1])
     except Exception:
         return False
-    
-    
+
+
     return value['backgroundColor'] == '#FFFFFFFF'
 
 async def wait_for_app_categories_page():
@@ -145,7 +145,7 @@ async def pull_app_in_categories():
         await wait_for_app_categories_page()
 
     main_screen_size = await hdc.get_main_screen_size()
-    
+
     clicked_categories: set[str] = set()
     stable_count = 0
     while stable_count < 2:
@@ -168,17 +168,17 @@ async def pull_app_in_categories():
                 logger.warning(f"跳过分类 [{text}]")
                 continue
             logger.info(f"点击分类 [{text}]")
+            await anyio.sleep(0.25)
             await hdc.click_by_bounds(bounds)
-
             await anyio.sleep(1.25)
             # start pull apps
             await next_pull_apps_in_categories()
-            
+
 
         # roll down
         main_screen_size = await hdc.get_main_screen_size()
         await hdc.roll_to_y(main_screen_size[0] * 0.5, main_screen_size[1] * 0.2, main_screen_size[1] * 0.72)
-        
+
         if not current_clicked_categories:
             stable_count += 1
             logger.debug(f"没有找到可点击的分类 [{stable_count}]")
@@ -210,7 +210,7 @@ async def find_app_link_in_logs(
             result.set_result(line)
             break
     return []
-    
+
 
 async def click_app_in_category_and_share(
     app_name: str,
@@ -258,10 +258,10 @@ async def click_app_in_category_and_share(
     if parse_res.empty():
         logger.error(f"没有找到包名 [{app_name}]")
         return
-    
+
     pkg = parse_res.pkgs[-1] # get last pkg
     logger.success(f"应用 [{app_name}] 包名 [{pkg}]")
-    
+
 
 
     return pkg
@@ -273,7 +273,7 @@ async def pull_apps_in_categories():
         await anyio.sleep(0.25)
         res = await hdc.dump_layout_to_json()
         list_items = utils.find_json_value_by_prev_path(res, utils.find_json_value_as_path(res, "List")[0], 2)
-        
+
         current_apps_list: list[str] = []
         current_apps_bounds: dict[str, tuple[int, int, int, int]] = {}
         for path in utils.find_json_value_as_path(list_items, "app_name"):
@@ -288,7 +288,7 @@ async def pull_apps_in_categories():
             current_apps_list.append(text)
             bounds = utils.parse_bounds(item['bounds'])
             current_apps_bounds[text] = bounds
-    
+
         new_diff_apps = set(current_apps_list) - full_apps_list
         not_exists_apps = await get_not_exists_apps(list(new_diff_apps))
         new_shared = []
@@ -319,7 +319,7 @@ async def pull_apps_in_categories():
             stable_count += 1
             logger.debug(f"尝试滑动失败，可能是到达底部 [{stable_count}]")
             continue
-        
+
         stable_count = 0
 
 async def next_pull_apps_in_categories():
@@ -332,7 +332,7 @@ async def next_pull_apps_in_categories():
 
     exit_btn = utils.parse_bounds(utils.find_json_value_by_path(apps_category_res, path)['bounds'])
     await hdc.click_by_bounds(exit_btn, 0.25)
-        
+
 async def start_hilog_process(
     task_group: anyio.abc.TaskGroup
 ):
@@ -341,7 +341,7 @@ async def start_hilog_process(
         "-e", "dashboard_shared", "-T", "JSAPP"
     )
     task_group.start_soon(hilog_process.run_forever)
-    
+
 
 async def exit_main():
     logger.info("退出")
@@ -366,12 +366,12 @@ async def main(args):
     logger.info(f"Gallery API: {args_gallery_api}")
     gallery.init_gallery(args_gallery_api)
 
-    
+
     args_username = args.username
     if args_username is None or not args_username.strip():
         logger.info("未找到用户名")
         return
-    
+
     submit_username = args_username
     logger.info(f"用户名 [{submit_username}]")
 
@@ -415,5 +415,3 @@ async def main(args):
         assert hilog_process is not None
         await hilog_process.exit()
         main_tg.cancel_scope.cancel()
-
-    
