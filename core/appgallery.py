@@ -43,6 +43,7 @@ async def main(args: argparse.Namespace):
     fast_pull = args.fast_pull
     skip_app_categories = args.skip_app_categories
     skip_categories = args.skip_categories
+    ping = args.ping
 
     start_time = runtime.perf_counter_ns()
     device_type = await hdc.get_device_type()
@@ -148,7 +149,7 @@ async def pull_categories() -> PullResult:
                 continue
 
             await hdc.click_by_bounds(btn_pos, 1.75)
-            await asyncio.sleep(1)
+            await asyncio.sleep(1 + ping * 0.05)
             logger.info(f'正在拉取分类 [{text}]...')
             r = await start_pull_apps()
             res.add(r)
@@ -203,7 +204,7 @@ async def start_pull_apps() -> PullResult:
         pending_new_apps = await get_not_exists_apps(cur_apps)
         for app in pending_new_apps:
             logger.success(f'发现新应用 [{app}]')
-            await hdc.click_by_bounds(apps_pos[app], 1)
+            await hdc.click_by_bounds(apps_pos[app], 1 + ping * 0.05)
             # detail
             await share_app(app)
             new_apps.append(app)
