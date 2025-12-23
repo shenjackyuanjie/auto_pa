@@ -71,7 +71,7 @@ class HMGallery:
         try:
             resp = await self.client.get(f"apps/list/{idx}", params=asdict(params))
         except Exception as e:
-            logger.traceback(f"search list failed: {e}")
+            logger.error(f"search list failed: {e}")
             return await self._search_list(idx, params, _retries + 1)
         if resp.status_code == 200:
             response: BaseResponse = resp.json()
@@ -99,8 +99,8 @@ class HMGallery:
             current_idx = (idx := idx + 1)
             try:
                 data = await self._search_list(current_idx, SearchParams(**params))
-            except Exception as e:
-                logger.traceback(f"search app {name} failed: {e}")
+            except Exception:
+                logger.traceback(f"search app {name} failed")
                 continue
             # find name
             for app in data["data"]:

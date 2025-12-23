@@ -107,10 +107,10 @@ async def open_gallery_app():
     await asyncio.sleep(3)
 
 async def go_app_page():
-    if global_var.tab_game_btn is None:
+    if global_var.tab_app_btn is None:
         index_layout = await hdc.dump_layout_to_json()
-        global_var.tab_game_btn = find_json_value_by_prev_path(index_layout, find_json_value_as_path(index_layout, "BadgeImage.sys.symbol.bag_fill")[0])['bounds']
-    btn = global_var.tab_game_btn
+        global_var.tab_app_btn = find_json_value_by_prev_path(index_layout, find_json_value_as_path(index_layout, "BadgeImage.sys.symbol.bag_fill")[0])['bounds']
+    btn = global_var.tab_app_btn
     assert btn is not None
     logger.debug(f'应用按钮位置 [{btn}]')
     await hdc.click_by_bounds(btn)
