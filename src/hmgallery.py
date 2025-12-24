@@ -63,6 +63,7 @@ class HMGallery:
     async def _search_list(
         self,
         idx: int,
+        name: str,
         params: SearchParams,
         _retries: int = 0,
     ) -> SearchListResponse:
@@ -71,13 +72,13 @@ class HMGallery:
         try:
             resp = await self.client.get(f"apps/list/{idx}", params=asdict(params))
         except Exception as e:
-            logger.error(f"search list failed in retry {_retries}: {e}")
-            return await self._search_list(idx, params, _retries + 1)
+            logger.warning(f"app [{name}] search list failed in retry {_retries}: {e}")
+            return await self._search_list(idx, name, params, _retries + 1)
         if resp.status_code == 200:
             response: BaseResponse = resp.json()
             data: SearchListResponse = response["data"]
             return data
-        return await self._search_list(idx, params, _retries + 1)
+        return await self._search_list(idx, name, params, _retries + 1)
     
     async def search_app_name_exists(
         self,
@@ -98,9 +99,9 @@ class HMGallery:
         while 1:
             current_idx = (idx := idx + 1)
             try:
-                data = await self._search_list(current_idx, SearchParams(**params))
+                data = await self._search_list(current_idx, name, SearchParams(**params))
             except Exception:
-                logger.traceback(f"search app {name} failed")
+                logger.traceback(f"Failed to search app: {name}")
                 continue
             # find name
             for app in data["data"]:
