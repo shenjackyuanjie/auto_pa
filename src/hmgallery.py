@@ -71,7 +71,7 @@ class HMGallery:
         try:
             resp = await self.client.get(f"apps/list/{idx}", params=asdict(params))
         except Exception as e:
-            logger.error(f"search list failed: {e}")
+            logger.error(f"search list failed in retry {_retries}: {e}")
             return await self._search_list(idx, params, _retries + 1)
         if resp.status_code == 200:
             response: BaseResponse = resp.json()
