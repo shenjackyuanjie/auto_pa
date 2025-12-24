@@ -4,10 +4,11 @@ import anyio
 import httpx
 from tianxiu2b2t.anyio.concurrency import gather
 
-from .cache import cache 
+from .cache import cache
 from .logger import logger
 
-_gallery: Optional['HMGallery'] = None
+_gallery: Optional["HMGallery"] = None
+
 
 class BaseResponse(TypedDict):
     success: bool
@@ -16,8 +17,10 @@ class BaseResponse(TypedDict):
     limit: Optional[int]
     timestamp: str
 
+
 class AppInfo(TypedDict):
     name: str
+
 
 class SearchListResponse(TypedDict):
     data: list[AppInfo]
@@ -25,6 +28,7 @@ class SearchListResponse(TypedDict):
     page_size: int
     total_count: int
     total_pages: int
+
 
 @dataclass
 class CommentInfo:
@@ -39,6 +43,7 @@ class CommentInfo:
         data = asdict(self)
         # pop value is None
         return {k: v for k, v in data.items() if v is not None}
+
 
 @dataclass
 class SearchParams:
@@ -58,8 +63,13 @@ class HMGallery:
         self,
         *names: str,
     ) -> dict[str, bool]:
-        return dict(zip(names, await gather(*(self.search_app_name_exists(name) for name in names))))
-    
+        return dict(
+            zip(
+                names,
+                await gather(*(self.search_app_name_exists(name) for name in names)),
+            )
+        )
+
     async def _search_list(
         self,
         idx: int,
@@ -79,7 +89,7 @@ class HMGallery:
             data: SearchListResponse = response["data"]
             return data
         return await self._search_list(idx, name, params, _retries + 1)
-    
+
     async def search_app_name_exists(
         self,
         name: str,
@@ -99,7 +109,9 @@ class HMGallery:
         while 1:
             current_idx = (idx := idx + 1)
             try:
-                data = await self._search_list(current_idx, name, SearchParams(**params))
+                data = await self._search_list(
+                    current_idx, name, SearchParams(**params)
+                )
             except Exception:
                 logger.traceback(f"Failed to search app: {name}")
                 continue
@@ -113,34 +125,33 @@ class HMGallery:
         return False
 
     async def submit_apps(
-        self,
-        *pkgs: str,
-        comment: Optional[CommentInfo] = None
+        self, *pkgs: str, comment: Optional[CommentInfo] = None
     ) -> dict[str, bool]:
-        return dict(zip(pkgs, await gather(*(self.submit_app(pkg, comment.clone() if comment else None) for pkg in pkgs))))
-    
-    async def _submit_app_impl(
-        self,
-        pkg: str,
-        comment: CommentInfo
-    ) -> bool:
-        resp = await self.client.post("submit", json={
-            "pkg_name": pkg,
-            "comment": comment.to_json()
-        })
+        return dict(
+            zip(
+                pkgs,
+                await gather(
+                    *(
+                        self.submit_app(pkg, comment.clone() if comment else None)
+                        for pkg in pkgs
+                    )
+                ),
+            )
+        )
+
+    async def _submit_app_impl(self, pkg: str, comment: CommentInfo) -> bool:
+        resp = await self.client.post(
+            "submit", json={"pkg_name": pkg, "comment": comment.to_json()}
+        )
         if resp.status_code != 200:
             return False
         response: BaseResponse = resp.json()
         if response["success"]:
             return True
         return False
-    
-    async def submit_app(
-        self,
-        pkg: str,
-        comment: Optional[CommentInfo] = None
-    ) -> bool:
-        comment = (comment or CommentInfo())
+
+    async def submit_app(self, pkg: str, comment: Optional[CommentInfo] = None) -> bool:
+        comment = comment or CommentInfo()
         comment.platform = "auto_pa"
         retry = 0
         while retry < 3:
@@ -151,6 +162,7 @@ class HMGallery:
                 retry += 1
                 await anyio.sleep(5)
         return False
+
 
 def init_gallery(
     base_url: str,

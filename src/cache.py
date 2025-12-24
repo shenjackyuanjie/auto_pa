@@ -5,7 +5,7 @@ import diskcache
 class CacheManager:
     def __init__(
         self,
-        cache_dir: str = '.cache',
+        cache_dir: str = ".cache",
     ):
         self.cache = diskcache.Cache(cache_dir)
 

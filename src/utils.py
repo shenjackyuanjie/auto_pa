@@ -5,6 +5,7 @@ from typing import Any, List
 
 JSON_PATH = List[str | int]
 
+
 @dataclass
 class LinksPkgsAppIds:
     links: List[str] = field(default_factory=list)
@@ -44,7 +45,10 @@ def find_json_value_as_path(data: Any, value: Any) -> List[JSON_PATH]:
 
     return result
 
-def find_json_value_by_path(data: Any, path: JSON_PATH, raise_error: bool = False) -> Any:
+
+def find_json_value_by_path(
+    data: Any, path: JSON_PATH, raise_error: bool = False
+) -> Any:
     """
     根据给定的路径（`JSON_PATH` 类型）在数据中查找对应的值。
     """
@@ -58,6 +62,7 @@ def find_json_value_by_path(data: Any, path: JSON_PATH, raise_error: bool = Fals
             return None
     return current
 
+
 def find_json_value_by_prev_path(data: Any, path: JSON_PATH, deep: int = 1) -> Any:
     """
     根据给定的路径（`JSON_PATH` 类型）在数据中查找对应的值。
@@ -66,13 +71,17 @@ def find_json_value_by_prev_path(data: Any, path: JSON_PATH, deep: int = 1) -> A
     prev_path = path[:-deep]
     return find_json_value_by_path(data, prev_path)
 
+
 def list_json_value_by_paths(data: Any, path: List[JSON_PATH]) -> List[Any]:
     """
     根据给定的路径（`JSON_PATH` 类型）在数据中查找对应的值。
     """
     return [find_json_value_by_path(data, p) for p in path]
 
-def list_json_value_by_prev_paths(data: Any, path: List[JSON_PATH], deep: int = 1) -> List[Any]:
+
+def list_json_value_by_prev_paths(
+    data: Any, path: List[JSON_PATH], deep: int = 1
+) -> List[Any]:
     """
     根据给定的路径（`JSON_PATH` 类型）在数据中查找对应的值。
     """
@@ -83,10 +92,11 @@ def parse_bounds(bounds: str) -> tuple[int, int, int, int]:
     """
     解析 bounds 字符串，例如：`[0,0][1080,1920]`，返回 (x1, y1, x2, y2)
     """
-    first, last = bounds.split('][')
-    x1, y1 = map(int, first[1:].split(','))
-    x2, y2 = map(int, last[:-1].split(','))
+    first, last = bounds.split("][")
+    x1, y1 = map(int, first[1:].split(","))
+    x2, y2 = map(int, last[:-1].split(","))
     return x1, y1, x2, y2
+
 
 def json_dumps(
     data: Any,
@@ -95,6 +105,7 @@ def json_dumps(
     sort_keys: bool = True,
 ) -> str:
     import json
+
     return json.dumps(
         data,
         indent=indent,
@@ -106,29 +117,31 @@ def json_dumps(
 def parse_input_split_links_pkgs_and_app_ids(input_str: str) -> LinksPkgsAppIds:
     """
     解析输入字符串，提取链接、包名和app_id
-    
+
     Args:
         input_str: 输入的字符串
-        
+
     Returns:
         包含links, pkgs, app_ids的字典
     """
     input_str = input_str.strip()
     if not input_str:
         return LinksPkgsAppIds()
-    
+
     # 支持更多分隔符：空格、换行、逗号、分号、竖线等
-    parts = re.split(r'[\s\n,;|]+', input_str)
-    url_like = re.compile(r'^https?://[^\s]+$')
-    
+    parts = re.split(r"[\s\n,;|]+", input_str)
+    url_like = re.compile(r"^https?://[^\s]+$")
+
     # 修改正则，将 C+数字 和其他包名分开匹配
-    app_id_regex = re.compile(r'^[Cc]\d+$')  # 匹配 C 开头的数字（app_id）
-    pkg_name_regex = re.compile(r'^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$')  # 匹配传统包名
-    
+    app_id_regex = re.compile(r"^[Cc]\d+$")  # 匹配 C 开头的数字（app_id）
+    pkg_name_regex = re.compile(
+        r"^[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+$"
+    )  # 匹配传统包名
+
     # 用于从文本中提取的正则
-    extract_pkg_regex = re.compile(r'([a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+)')
-    extract_app_id_regex = re.compile(r'[Cc]\d+')
-    
+    extract_pkg_regex = re.compile(r"([a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z0-9_]+)+)")
+    extract_app_id_regex = re.compile(r"[Cc]\d+")
+
     links: List[str] = []
     pkgs: List[str] = []
     app_ids: List[str] = []
@@ -190,7 +203,6 @@ def parse_input_split_links_pkgs_and_app_ids(input_str: str) -> LinksPkgsAppIds:
             # 如果没有匹配到，则跳过一个字符
             start += 1
 
-
     # 按顺序的去重，也就是根据输入的顺序
     final_links = []
     final_pkgs = []
@@ -216,10 +228,9 @@ def parse_input_split_links_pkgs_and_app_ids(input_str: str) -> LinksPkgsAppIds:
         app_ids=final_app_ids,
     )
 
-def parse_log_datetime(
-    log: str
-) -> datetime.datetime:
+
+def parse_log_datetime(log: str) -> datetime.datetime:
     # now = datetime.datetime.now()
-    date, time, _ = log.split(' ', 2)
+    date, time, _ = log.split(" ", 2)
     # 12-07 16:01:30.000
-    return datetime.datetime.strptime(f'{date} {time}', '%m-%d %H:%M:%S.%f')
+    return datetime.datetime.strptime(f"{date} {time}", "%m-%d %H:%M:%S.%f")

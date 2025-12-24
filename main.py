@@ -6,8 +6,12 @@ from core import add_argument
 main_parser = argparse.ArgumentParser()
 # verbose
 # log_file
-main_parser.add_argument("--verbose", "-v", action="store_true", help="verbose mode", default=False)
-main_parser.add_argument("--log-file", "-l", action="store_true", help="enable log file", default=False)
+main_parser.add_argument(
+    "--verbose", "-v", action="store_true", help="verbose mode", default=False
+)
+main_parser.add_argument(
+    "--log-file", "-l", action="store_true", help="enable log file", default=False
+)
 
 add_argument(main_parser)
 
