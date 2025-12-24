@@ -207,6 +207,12 @@ async def click_pos(
 ):
     await shell("uinput", "-M", "-m", f"{int(x)}", f"{int(y)}", "-d", "0", "-u", "0")
 
+async def click_pos_by_scale(
+    x_scale: float,
+    y_scale: float,
+):
+    main_screen = await get_main_screen_size()
+    await click_pos(main_screen[0] * x_scale, main_screen[1] * y_scale)
 
 async def click_by_bounds(
     bounds: tuple[float, float, float, float] | str, wait_for: float = 0.75

@@ -52,6 +52,7 @@ async def start():
         logger.info("跳过应用检查")
 
     gallery.init_gallery(gallery_base_url)
+    await fuck_off_usb_connection_type() # 关闭USB连接UI
 
     async with hdc.HilogProcess("-e", "dashboard_shared", "-T", "JSAPP") as p:
         global hilog_process
@@ -124,6 +125,13 @@ async def open_gallery_app():
     )
     logger.success("打开 [华为应用市场] 成功！")
     await asyncio.sleep(3)
+
+async def fuck_off_usb_connection_type():
+    layout = await hdc.dump_layout_to_json()
+    path = find_json_value_as_path(layout, "USB 连接方式")
+    if not path:
+        return
+    await hdc.click_pos_by_scale(0.5, 0.8)
 
 
 async def go_app_page():
