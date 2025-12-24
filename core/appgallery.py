@@ -254,10 +254,12 @@ async def start_pull_apps(category: Optional[str] = None):
             break
         # break
     end_time = runtime.perf_counter_ns()
-    # logger.info(f'{f"{category}" if category else ""}拉取应用完成, 共 [{len(apps)}] 个应用，新应用 [{len(new_apps)}] 个，耗时 [{format_count_time(end_time - start_time)}] 平均 [{format_count_time(len(apps) / (end_time - start_time))}/个]')
+    elapsed_time = end_time - start_time
+    avg_apps = elapsed_time / len(apps) if len(apps) > 0 else 0
+    avg_new_apps = elapsed_time / len(new_apps) if len(new_apps) > 0 else 0
     display_category = f"[{category}] " if category else ""
     logger.info(
-        f"{display_category}拉取应用完成, 共 [{len(apps)}] 个应用，新应用 [{len(new_apps)}] 个，耗时 [{format_count_time(end_time - start_time)}] 平均 [{format_count_time(len(apps) / (end_time - start_time))}/个] 新应用平均 [{format_count_time(len(new_apps) / (end_time - start_time))}/个]"
+        f"{display_category}拉取应用完成, 共 [{len(apps)}] 个应用，新应用 [{len(new_apps)}] 个，耗时 [{format_count_time(elapsed_time)}] 平均 [{format_count_time(avg_apps)}/个] 新应用平均 [{format_count_time(avg_new_apps)}/个]"
     )
     exit_btn = find_json_value_by_prev_path(
         layout, find_json_value_as_path(layout, "BackButton")[0]
