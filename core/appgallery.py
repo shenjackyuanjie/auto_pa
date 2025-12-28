@@ -18,6 +18,7 @@ class StorageValue:
     app_share_btn: Optional[str] = None
     app_share_with_gallery_btn: Optional[str] = None
     app_share_to_gallery_btn: Optional[str] = None
+    app_direct_share_to_gallery_btn: Optional[str] = None
 
 
 @dataclass
@@ -214,9 +215,14 @@ async def get_not_exists_apps(apps: list[str]) -> list[str]:
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
-        if exists:
+        if exists and app not in pulled_apps:
             continue
         not_exists_apps.append(app)
+    
+    # pulled_apps
+    # for app in apps:
+    #     if app in pulled_apps and app not in not_exists_apps:
+    #         not_exists_apps.append(app)
     return not_exists_apps
 
 
@@ -285,6 +291,38 @@ async def find_app_link_in_logs():
             return line
     return None
 
+async def find_and_click_share_app_btn() -> list[str]:
+    if global_var.app_direct_share_to_gallery_btn is not None:
+        return [global_var.app_direct_share_to_gallery_btn]
+    if global_var.app_share_with_gallery_btn is not None and global_var.app_share_to_gallery_btn is not None:
+        return [global_var.app_share_with_gallery_btn, global_var.app_share_to_gallery_btn]
+    if global_var.app_direct_share_to_gallery_btn is None:
+        share_layout = await hdc.dump_layout_to_json()
+        final_share_path = find_json_value_as_path(share_layout, "按已有信息投稿到看板")
+        if len(final_share_path) != 0:
+            global_var.app_direct_share_to_gallery_btn = find_json_value_by_prev_path(
+                share_layout, final_share_path[0]
+            )["bounds"]
+            assert global_var.app_direct_share_to_gallery_btn is not None
+            return [global_var.app_direct_share_to_gallery_btn]
+        else:
+            final_share_path = find_json_value_as_path(share_layout, "应用看板")
+            global_var.app_share_with_gallery_btn = find_json_value_by_prev_path(
+                share_layout, final_share_path[0]
+            )["bounds"]
+            assert global_var.app_share_with_gallery_btn is not None
+            await hdc.click_by_bounds(global_var.app_share_with_gallery_btn)
+        
+            app_view_layout = await hdc.dump_layout_to_json()
+            global_var.app_share_to_gallery_btn = find_json_value_by_prev_path(
+                app_view_layout,
+                find_json_value_as_path(app_view_layout, "按已有信息投稿到看板")[0],
+            )["bounds"]
+            assert global_var.app_share_to_gallery_btn is not None
+            return [global_var.app_share_with_gallery_btn, global_var.app_share_to_gallery_btn]
+            
+    return []
+    
 
 async def share_app(app_name: str):
     if global_var.app_exit_btn is None or global_var.app_share_btn is None:
@@ -305,27 +343,10 @@ async def share_app(app_name: str):
     assert share_btn is not None
     await hdc.click_by_bounds(share_btn, 1)
 
-    # share layout
+    btns = await find_and_click_share_app_btn()
+    for btn in btns:
+        await hdc.click_by_bounds(btn, 1)
 
-    if global_var.app_share_with_gallery_btn is None:
-        share_layout = await hdc.dump_layout_to_json()
-        # "应用看板"
-        global_var.app_share_with_gallery_btn = find_json_value_by_prev_path(
-            share_layout, find_json_value_as_path(share_layout, "应用看板")[0]
-        )["bounds"]
-    app_view_btn = global_var.app_share_with_gallery_btn
-    assert app_view_btn is not None
-    await hdc.click_by_bounds(app_view_btn)
-
-    if global_var.app_share_to_gallery_btn is None:
-        app_view_layout = await hdc.dump_layout_to_json()
-        global_var.app_share_to_gallery_btn = find_json_value_by_prev_path(
-            app_view_layout,
-            find_json_value_as_path(app_view_layout, "按已有信息投稿到看板")[0],
-        )["bounds"]
-    share_app_btn = global_var.app_share_to_gallery_btn
-    assert share_app_btn is not None
-    await hdc.click_by_bounds(share_app_btn)
     # share_layout = find_json_value_by_prev_path(share_layout, find_json_value_as_path(share_layout, "List")[0], 2)
     res = await find_app_link_in_logs()
     assert res is not None
