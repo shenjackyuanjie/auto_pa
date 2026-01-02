@@ -246,7 +246,7 @@ async def share_app(device: hdc.Device, app_name: str):
     assert res is not None
     pkg = utils.parse_input_split_links_pkgs_and_app_ids(res).pkgs[-1]
     logger.success(f"[{device.tag}] [{app_name}] [{pkg}]")
-    await anyio.sleep(1.25)
+    await anyio.sleep(0.95 + (ping * 0.05))
 
     exit_btn = global_var[device.sn].app_exit_btn
     assert exit_btn is not None
