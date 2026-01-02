@@ -68,13 +68,13 @@ class Loglogger:
         if args or kwargs:
             self._log_with_args("ERROR", *args, **kwargs)
         error = traceback.format_exc()
-        self.log.error(error)
+        self._log_with_args("ERROR", error)
 
     def debug_traceback(self, *args, **kwargs):
         if args or kwargs:
             self._log_with_args("DEBUG", *args, **kwargs)
         error = traceback.format_exc()
-        self.log.debug(error)
+        self._log_with_args("DEBUG", error)
 
 
 logger: "Loglogger" = None  # type: ignore

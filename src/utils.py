@@ -98,6 +98,22 @@ def parse_bounds(bounds: str) -> tuple[int, int, int, int]:
     return x1, y1, x2, y2
 
 
+def is_in_area(
+    input_bounds: str, area_bounds: str, tolerance: int = 0
+) -> bool:
+    """
+    判断输入的 bounds 是否在指定的 area_bounds 内
+    """
+    x1, y1, x2, y2 = parse_bounds(input_bounds)
+    ax1, ay1, ax2, ay2 = parse_bounds(area_bounds)
+
+    return (
+        x1 >= ax1 - tolerance
+        and y1 >= ay1 - tolerance
+        and x2 <= ax2 + tolerance
+        and y2 <= ay2 + tolerance
+    )
+
 def json_dumps(
     data: Any,
     indent: int = 4,

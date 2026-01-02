@@ -28,4 +28,4 @@ def add_argument(parser: argparse.ArgumentParser):
         nargs="+",
         default=[],
     )
-    parser.add_argument("--ping", type=int, help="Ping", default=5)
+    parser.add_argument("--ping", type=int, help="Ping", default=15)
