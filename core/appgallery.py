@@ -63,7 +63,7 @@ async def device_main(
     display_repeated_apps = list(
         map(lambda app: f"[{app}] [{pulled_apps[device.sn].count(app)}]", sorted(repeated_apps))
     )
-    logger.info("[{device.tag}] 重复应用:")
+    logger.info(f"[{device.tag}] 重复应用:")
     for i in range(0, len(display_repeated_apps), 5):
         logger.info(" ".join(display_repeated_apps[i : i + 5]))
 
