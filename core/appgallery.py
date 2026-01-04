@@ -122,12 +122,13 @@ async def go_game_page(device: hdc.Device):
 async def pull_categories(device: hdc.Device):
     pulled_categories = []
     # idx = 1 if global_var[device.sn].phone else 2
+    idx = -1 if global_var[device.sn].phone else 2
     while 1:
         current_categories_len = len(pulled_categories)
 
         layout = await device.dump_layout_to_json()
         layout = utils.find_json_value_by_prev_path(
-            layout, utils.find_json_value_as_path(layout, "List")[-1], 2
+            layout, utils.find_json_value_as_path(layout, "List")[idx], 2
         )
         # and then fuck to find btn
         btns = utils.find_json_value_as_path(layout, "Button")
