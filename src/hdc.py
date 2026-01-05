@@ -58,12 +58,21 @@ class Device:
 
     def __repr__(self) -> str:
         assert self._device_info is not None
-        return f"Device({self.device_id}, {self.connection_type}, {self.device_type}, {self.model}, {self.name})"
+        return f"Device({self.display_device_id}, {self.connection_type}, {self.device_type}, {self.model}, {self.name})"
     
     @property
     def tag(self):
-        return f"{self.name} ({self.model}, {self.device_id})"
+        return f"{self.name} ({self.model}, {self.display_device_id})"
 
+    @property
+    def display_device_id(self):
+        # if self.connection_type == "usb":
+        if self.connection_type == "usb":
+            total = len(self.device_id)
+            start = 3
+            end = max(total - 3, start)
+            return self.device_id[:start] + ("*" * (total - (end - start))) + self.device_id[end:]
+        return self.device_id
     @property
     def device_id(self) -> str:
         return self._device
