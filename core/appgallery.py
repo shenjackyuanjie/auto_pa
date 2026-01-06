@@ -37,7 +37,7 @@ APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
 APPGALLERY_ABILITY = "MainAbility"
 FUCKOFF_APPGALLERY_UPDATE = datetime.datetime.fromtimestamp(1767627470.362)
 FUCKOFF_APPGALLERY_VERSION_CODE: int = 1460801300
-FUCKOFF_SUB_CHUNKS = ["新鲜应用", "时下畅销应用"]
+FUCKOFF_SUB_CHUNKS = [re.compile("新鲜(应用|游戏)"), re.compile("时下畅销新鲜(应用|游戏)")]
 global_var: defaultdict[str, StorageValue] = defaultdict(lambda: StorageValue())
 hilog_processes: dict[str, hdc.HilogProcess] = {}
 skip_app_check = False
@@ -209,20 +209,21 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
                     layout, utils.find_json_value_as_path(layout, "BackButton")[0]
                 )["bounds"]
             for chunk in FUCKOFF_SUB_CHUNKS:
-                if chunk in clicked_chunks:
-                    continue
+                # if chunk in clicked_chunks:
+                #     continue
                 chunk_paths = utils.find_json_value_as_path(layout, chunk)
                 if len(chunk_paths) == 0:
                     continue
                 chunk_path = chunk_paths[0]
-                logger.info(f"[{device.tag}] 正在拉取分类 [{category}] 的 [{chunk}]...")
+                match_chunk = utils.find_json_value_by_prev_path(layout, chunk_path)["text"]
+                logger.info(f"[{device.tag}] 正在拉取分类 [{category}] 的 [{match_chunk}]...")
                 await device.click_by_bounds(
                     utils.find_json_value_by_prev_path(layout, chunk_path)["bounds"],
                     1.75,
                 )
                 await anyio.sleep(1 + ping * 0.05)
-                await start_pull_apps(device, f"{category} - {chunk}")
-                clicked_chunks.append(chunk)
+                await start_pull_apps(device, f"{category} - {match_chunk}")
+                clicked_chunks.append(match_chunk)
                 # roll
             if current_chunks == len(clicked_chunks):
                 if retries >= 3:
