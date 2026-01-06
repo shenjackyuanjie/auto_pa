@@ -12,14 +12,14 @@ main_parser.add_argument(
     "--verbose", "-v", action="store_true", help="verbose mode", default=False
 )
 main_parser.add_argument(
-    "--log-file", "-l", action="store_true", help="enable log file", default=False
+    "--disable-log-file", "-Dl", action="store_true", help="disable log file", default=False
 )
 
 add_argument(main_parser)
 
 if __name__ == "__main__":
     args = main_parser.parse_args()
-    init_logger(args.log_file, args.verbose)
+    init_logger(not args.disable_log_file, args.verbose)
 
     from src.logger import logger
     from core.appgallery import main
