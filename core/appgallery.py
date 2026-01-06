@@ -48,6 +48,7 @@ skip_categories = []
 ping = 15
 pulled_apps: defaultdict[str, list[str]] = defaultdict(list)
 pull_res: defaultdict[str, PullResult] = defaultdict(lambda: PullResult())
+repeated_apps: bool = False
 
 
 async def device_main(device: hdc.Device):
@@ -413,7 +414,9 @@ async def get_not_exists_apps(apps: list[str]) -> list[str]:
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
-        if exists or app in all_pulled_apps():
+        if (repeated_apps and exists and app not in all_pulled_apps()) or (
+            exists or app in all_pulled_apps()
+        ):
             continue
         not_exists_apps.append(app)
 

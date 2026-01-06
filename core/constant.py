@@ -29,3 +29,4 @@ def add_argument(parser: argparse.ArgumentParser):
         default=[],
     )
     parser.add_argument("--ping", type=int, help="Ping", default=15)
+    parser.add_argument("--repeated-apps", "-r", action="store_true", help="Pull Repeated Apps", default=False)
