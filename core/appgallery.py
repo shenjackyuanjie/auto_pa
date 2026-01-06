@@ -19,6 +19,7 @@ class StorageValue:
     app_share_with_gallery_btn: Optional[str] = None
     app_share_to_gallery_btn: Optional[str] = None
     app_direct_share_to_gallery_btn: Optional[str] = None
+    app_info_version: int = 0
 
 @dataclass
 class PullResult:
@@ -32,6 +33,8 @@ class PullResult:
 APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
 APPGALLERY_ABILITY = "MainAbility"
 FUCKOFF_APPGALLERY_UPDATE = datetime.datetime.fromtimestamp(1767627470.362)
+FUCKOFF_APPGALLERY_VERSION_CODE: int = 1460801300
+FUCKOFF_SUB_CHUNKS = ['新鲜应用', '时下畅销应用']
 global_var: defaultdict[str, StorageValue] = defaultdict(lambda: StorageValue())
 hilog_processes: dict[str, hdc.HilogProcess] = {}
 skip_app_check = False
@@ -77,6 +80,7 @@ async def inner_device_main(device: hdc.Device):
     app_gallery_info = await device.get_app_info(APPGALLERY_PKG)
     if app_gallery_info is not None:
         logger.info(f"[{device.tag}] 应用商店版本 [{app_gallery_info.version_name} ({app_gallery_info.version_code})] 更新时间 [{app_gallery_info.update_time}]")
+        global_var[device.sn].app_info_version = app_gallery_info.version_code
 
     async with hdc.HilogProcess(device.device_id, "-e", "dashboard_shared", "-T", "JSAPP") as p:
         hilog_processes[device.sn] = p
@@ -162,11 +166,50 @@ async def pull_categories(device: hdc.Device):
             await device.click_by_bounds(btn_pos, 1.75)
             await anyio.sleep(1 + ping * 0.05)
             logger.info(f"[{device.tag}] 正在拉取分类 [{text}]...")
-            await start_pull_apps(device, text)
+            # await start_pull_apps(device, text)
+            await pull_chunk_in_category(device, text)
         if current_categories_len == len(pulled_categories):
             break
         await device.simple_roll_down(0.5, 0.2, 0.72)
 
+
+async def pull_chunk_in_category(device: hdc.Device, category: str):
+    # 因为沟槽的华为更新了应用市场，所以现在需要先点进去分类，然后点进去子分类，最后再点进去应用
+    exit_btn = None
+    if global_var[device.sn].app_info_version < FUCKOFF_APPGALLERY_VERSION_CODE: 
+        await start_pull_apps(device, category)
+    else:
+        clicked_chunks = []
+        retries = 0
+        while len(clicked_chunks) < len(FUCKOFF_SUB_CHUNKS):
+            current_chunks = len(clicked_chunks)
+            layout = await device.dump_layout_to_json()
+            if exit_btn is None:
+                exit_btn = utils.find_json_value_by_prev_path(
+                    layout, utils.find_json_value_as_path(layout, "BackButton")[0]
+                )["bounds"]
+            for chunk in FUCKOFF_SUB_CHUNKS:
+                if chunk in clicked_chunks:
+                    continue
+                chunk_paths = utils.find_json_value_as_path(layout, chunk)
+                if len(chunk_paths) == 0:
+                    continue
+                chunk_path = chunk_paths[0]
+                logger.info(f"[{device.tag}] 正在拉取分类 [{category}] 的 [{chunk}]...")
+                await device.click_by_bounds(utils.find_json_value_by_prev_path(layout, chunk_path)["bounds"], 1.75)
+                await anyio.sleep(1 + ping * 0.05)
+                await start_pull_apps(device, f"{category} - {chunk}")
+                clicked_chunks.append(chunk)
+                # roll
+            if current_chunks == len(clicked_chunks):
+                if retries >= 3:
+                    display_chunks = ", ".join(map(lambda x: f"[{x}]", clicked_chunks))
+                    logger.debug(f"[{device.tag}] 怎么只有 {display_chunks} 呢？")
+                    break
+                retries += 1
+            await device.simple_roll_down(0.5, 0.2, 0.72)
+    if exit_btn is not None:
+        await device.click_by_bounds(exit_btn, 1.75)
 
 async def start_pull_apps(device: hdc.Device, category: Optional[str] = None):
     # logger.info('正在开始拉取应用...')
