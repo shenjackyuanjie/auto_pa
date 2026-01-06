@@ -413,7 +413,7 @@ async def get_not_exists_apps(apps: list[str]) -> list[str]:
     result = await gallery.get_gallery().search_app_names_exists(*apps)
     not_exists_apps = []
     for app, exists in result.items():
-        if exists and app not in all_pulled_apps():
+        if exists or app in all_pulled_apps():
             continue
         not_exists_apps.append(app)
 
