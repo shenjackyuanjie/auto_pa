@@ -9,6 +9,7 @@ from src.logger import logger
 from tianxiu2b2t.utils import runtime
 from tianxiu2b2t.units import format_count_time
 
+
 @dataclass
 class StorageValue:
     phone: bool = False
@@ -21,6 +22,7 @@ class StorageValue:
     app_direct_share_to_gallery_btn: Optional[str] = None
     app_info_version: int = 0
 
+
 @dataclass
 class PullResult:
     total: int = 0
@@ -30,11 +32,12 @@ class PullResult:
         self.total += val.total
         self.new += val.new
 
+
 APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
 APPGALLERY_ABILITY = "MainAbility"
 FUCKOFF_APPGALLERY_UPDATE = datetime.datetime.fromtimestamp(1767627470.362)
 FUCKOFF_APPGALLERY_VERSION_CODE: int = 1460801300
-FUCKOFF_SUB_CHUNKS = ['新鲜应用', '时下畅销应用']
+FUCKOFF_SUB_CHUNKS = ["新鲜应用", "时下畅销应用"]
 global_var: defaultdict[str, StorageValue] = defaultdict(lambda: StorageValue())
 hilog_processes: dict[str, hdc.HilogProcess] = {}
 skip_app_check = False
@@ -46,9 +49,8 @@ ping = 15
 pulled_apps: defaultdict[str, list[str]] = defaultdict(list)
 pull_res: defaultdict[str, PullResult] = defaultdict(lambda: PullResult())
 
-async def device_main(
-    device: hdc.Device
-):
+
+async def device_main(device: hdc.Device):
     start_time = runtime.perf_counter_ns()
     try:
         await inner_device_main(device)
@@ -61,17 +63,23 @@ async def device_main(
         f"[{device.tag}] 耗时 [{format_count_time(end_time - start_time)}] 共 [{pull_res[device.sn].total}] 个应用，新增 [{pull_res[device.sn].new}] 个应用"
     )
     no_repeated_apps = set(pulled_apps[device.sn])
-    repeated_apps = set([app for app in pulled_apps if pulled_apps[device.sn].count(app) > 1])
+    repeated_apps = set(
+        [app for app in pulled_apps if pulled_apps[device.sn].count(app) > 1]
+    )
     logger.info(f"[{device.tag}] 共 [{len(no_repeated_apps)}] 个无重复应用")
     logger.info(f"[{device.tag}] 共 [{len(repeated_apps)}] 个有重复应用")
     # no_repeated_apps = list(no_repeated_apps)
     # repeated_apps = [app for app in pulled_apps if no_repeated_apps.count(app) > 1]
     display_repeated_apps = list(
-        map(lambda app: f"[{app}] [{pulled_apps[device.sn].count(app)}]", sorted(repeated_apps))
+        map(
+            lambda app: f"[{app}] [{pulled_apps[device.sn].count(app)}]",
+            sorted(repeated_apps),
+        )
     )
     logger.info(f"[{device.tag}] 重复应用:")
     for i in range(0, len(display_repeated_apps), 5):
         logger.info(" ".join(display_repeated_apps[i : i + 5]))
+
 
 async def inner_device_main(device: hdc.Device):
     logger.info(f"[{device.tag}] 设备类型 [{device.device_type}]")
@@ -79,10 +87,14 @@ async def inner_device_main(device: hdc.Device):
 
     app_gallery_info = await device.get_app_info(APPGALLERY_PKG)
     if app_gallery_info is not None:
-        logger.info(f"[{device.tag}] 应用商店版本 [{app_gallery_info.version_name} ({app_gallery_info.version_code})] 更新时间 [{app_gallery_info.update_time}]")
+        logger.info(
+            f"[{device.tag}] 应用商店版本 [{app_gallery_info.version_name} ({app_gallery_info.version_code})] 更新时间 [{app_gallery_info.update_time}]"
+        )
         global_var[device.sn].app_info_version = app_gallery_info.version_code
 
-    async with hdc.HilogProcess(device.device_id, "-e", "dashboard_shared", "-T", "JSAPP") as p:
+    async with hdc.HilogProcess(
+        device.device_id, "-e", "dashboard_shared", "-T", "JSAPP"
+    ) as p:
         hilog_processes[device.sn] = p
         if fast_pull:
             await start_pull_apps(device)
@@ -99,38 +111,46 @@ async def inner_device_main(device: hdc.Device):
             await pull_categories(device)
 
 
-
 async def go_app_page(device: hdc.Device):
     if global_var[device.sn].tab_app_btn is None:
         index_layout = await device.dump_layout_to_json()
         global_var[device.sn].tab_app_btn = utils.find_json_value_by_prev_path(
             index_layout,
-            utils.find_json_value_as_path(index_layout, "BadgeImage.sys.symbol.bag_fill")[0],
+            utils.find_json_value_as_path(
+                index_layout, "BadgeImage.sys.symbol.bag_fill"
+            )[0],
         )["bounds"]
     btn = global_var[device.sn].tab_app_btn
     assert btn is not None
     logger.debug(f"[{device.tag}] 应用按钮位置 [{btn}]")
     await device.click_by_bounds(btn)
 
+
 async def go_categories_page(device: hdc.Device):
     layout = await device.dump_layout_to_json()
-    paths = utils.regex_json_value_as_path(layout, re.compile("^Paf_Lantern_(?:Select_|Normal_)?Image(?:_1)?$"))
+    paths = utils.regex_json_value_as_path(
+        layout, re.compile("^Paf_Lantern_(?:Select_|Normal_)?Image(?:_1)?$")
+    )
     btn = utils.find_json_value_by_prev_path(
         layout, paths[0] if (len(paths) // 2) == 1 else paths[2]
     )["bounds"]
     await device.click_by_bounds(btn)
+
 
 async def go_game_page(device: hdc.Device):
     if global_var[device.sn].tab_game_btn is None:
         index_layout = await device.dump_layout_to_json()
         global_var[device.sn].tab_game_btn = utils.find_json_value_by_prev_path(
             index_layout,
-            utils.find_json_value_as_path(index_layout, "BadgeImage.sys.symbol.game_fill")[0],
+            utils.find_json_value_as_path(
+                index_layout, "BadgeImage.sys.symbol.game_fill"
+            )[0],
         )["bounds"]
     btn = global_var[device.sn].tab_game_btn
     assert btn is not None
     logger.debug(f"[{device.tag}] 游戏按钮位置 [{btn}]")
     await device.click_by_bounds(btn, 1.75)
+
 
 async def pull_categories(device: hdc.Device):
     pulled_categories = []
@@ -176,7 +196,7 @@ async def pull_categories(device: hdc.Device):
 async def pull_chunk_in_category(device: hdc.Device, category: str):
     # 因为沟槽的华为更新了应用市场，所以现在需要先点进去分类，然后点进去子分类，最后再点进去应用
     exit_btn = None
-    if global_var[device.sn].app_info_version < FUCKOFF_APPGALLERY_VERSION_CODE: 
+    if global_var[device.sn].app_info_version < FUCKOFF_APPGALLERY_VERSION_CODE:
         await start_pull_apps(device, category)
     else:
         clicked_chunks = []
@@ -196,7 +216,10 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
                     continue
                 chunk_path = chunk_paths[0]
                 logger.info(f"[{device.tag}] 正在拉取分类 [{category}] 的 [{chunk}]...")
-                await device.click_by_bounds(utils.find_json_value_by_prev_path(layout, chunk_path)["bounds"], 1.75)
+                await device.click_by_bounds(
+                    utils.find_json_value_by_prev_path(layout, chunk_path)["bounds"],
+                    1.75,
+                )
                 await anyio.sleep(1 + ping * 0.05)
                 await start_pull_apps(device, f"{category} - {chunk}")
                 clicked_chunks.append(chunk)
@@ -210,6 +233,7 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
             await device.simple_roll_down(0.5, 0.2, 0.72)
     if exit_btn is not None:
         await device.click_by_bounds(exit_btn, 1.75)
+
 
 async def start_pull_apps(device: hdc.Device, category: Optional[str] = None):
     # logger.info('正在开始拉取应用...')
@@ -271,8 +295,12 @@ async def start_pull_apps(device: hdc.Device, category: Optional[str] = None):
     pulled_apps[device.sn].extend(apps)
     pull_res[device.sn].add(PullResult(total=len(apps), new=len(new_apps)))
 
+
 async def share_app(device: hdc.Device, app_name: str):
-    if global_var[device.sn].app_exit_btn is None or global_var[device.sn].app_share_btn is None:
+    if (
+        global_var[device.sn].app_exit_btn is None
+        or global_var[device.sn].app_share_btn is None
+    ):
         layout = await device.dump_layout_to_json()
 
         # titlebar -> button
@@ -313,38 +341,69 @@ async def find_app_link_in_logs(device: hdc.Device):
             return line
     return None
 
+
 async def find_and_click_share_app_btn(device: hdc.Device) -> list[str]:
-    if (app_direct_share_to_gallery_btn := global_var[device.sn].app_direct_share_to_gallery_btn) is not None:
+    if (
+        app_direct_share_to_gallery_btn := global_var[
+            device.sn
+        ].app_direct_share_to_gallery_btn
+    ) is not None:
         return [app_direct_share_to_gallery_btn]
-    if (app_share_with_gallery_btn := global_var[device.sn].app_share_with_gallery_btn) is not None and (app_share_to_gallery_btn := global_var[device.sn].app_share_to_gallery_btn) is not None:
+    if (
+        app_share_with_gallery_btn := global_var[device.sn].app_share_with_gallery_btn
+    ) is not None and (
+        app_share_to_gallery_btn := global_var[device.sn].app_share_to_gallery_btn
+    ) is not None:
         return [app_share_with_gallery_btn, app_share_to_gallery_btn]
     if global_var[device.sn].app_direct_share_to_gallery_btn is None:
         share_layout = await device.dump_layout_to_json()
-        final_share_path = utils.find_json_value_as_path(share_layout, "按已有信息投稿到看板")
+        final_share_path = utils.find_json_value_as_path(
+            share_layout, "按已有信息投稿到看板"
+        )
         if len(final_share_path) != 0:
-            global_var[device.sn].app_direct_share_to_gallery_btn = utils.find_json_value_by_prev_path(
+            global_var[
+                device.sn
+            ].app_direct_share_to_gallery_btn = utils.find_json_value_by_prev_path(
                 share_layout, final_share_path[0]
             )["bounds"]
-            assert (app_direct_share_to_gallery_btn := global_var[device.sn].app_direct_share_to_gallery_btn) is not None
+            assert (
+                app_direct_share_to_gallery_btn := global_var[
+                    device.sn
+                ].app_direct_share_to_gallery_btn
+            ) is not None
             return [app_direct_share_to_gallery_btn]
         else:
             final_share_path = utils.find_json_value_as_path(share_layout, "应用看板")
-            global_var[device.sn].app_share_with_gallery_btn = utils.find_json_value_by_prev_path(
+            global_var[
+                device.sn
+            ].app_share_with_gallery_btn = utils.find_json_value_by_prev_path(
                 share_layout, final_share_path[0]
             )["bounds"]
-            assert (app_share_with_gallery_btn := global_var[device.sn].app_share_with_gallery_btn) is not None
+            assert (
+                app_share_with_gallery_btn := global_var[
+                    device.sn
+                ].app_share_with_gallery_btn
+            ) is not None
             await device.click_by_bounds(app_share_with_gallery_btn)
-        
+
             app_view_layout = await device.dump_layout_to_json()
-            global_var[device.sn].app_share_to_gallery_btn = utils.find_json_value_by_prev_path(
+            global_var[
+                device.sn
+            ].app_share_to_gallery_btn = utils.find_json_value_by_prev_path(
                 app_view_layout,
-                utils.find_json_value_as_path(app_view_layout, "按已有信息投稿到看板")[0],
+                utils.find_json_value_as_path(app_view_layout, "按已有信息投稿到看板")[
+                    0
+                ],
             )["bounds"]
-            assert (app_share_to_gallery_btn := global_var[device.sn].app_share_to_gallery_btn) is not None
+            assert (
+                app_share_to_gallery_btn := global_var[
+                    device.sn
+                ].app_share_to_gallery_btn
+            ) is not None
             return [app_share_with_gallery_btn, app_share_to_gallery_btn]
-            
+
     return []
-    
+
 
 async def get_not_exists_apps(apps: list[str]) -> list[str]:
     if skip_app_check:
@@ -356,8 +415,9 @@ async def get_not_exists_apps(apps: list[str]) -> list[str]:
         if exists and app not in pulled_apps:
             continue
         not_exists_apps.append(app)
-    
+
     return not_exists_apps
+
 
 async def start_app(device: hdc.Device):
     logger.info(f"[{device.tag}] 正在关闭 [AppGallery]")
@@ -367,6 +427,7 @@ async def start_app(device: hdc.Device):
     await device.open_app(APPGALLERY_PKG, APPGALLERY_ABILITY)
     await anyio.sleep(3)
     logger.success(f"[{device.tag}] [AppGallery] 启动！")
+
 
 async def main(args):
     global \
@@ -383,7 +444,7 @@ async def main(args):
     skip_app_categories = args.skip_app_categories
     skip_categories = args.skip_categories
     ping = args.ping
-    
+
     logger.info("AppGallery Pull Ciallo～ (∠・ω< )⌒★")
     logger.info(f"App Gallery API [{gallery_base_url}]")
     if skip_app_check:
@@ -392,8 +453,10 @@ async def main(args):
     devices = await hdc.get_devices()
     for device in devices:
         logger.info(f"设备信息 [{device.tag}]")
-        
-    logger.info(f"一共有 [{len(devices)}] 台设备，其中有 [{len([d for d in devices if d.connection_type == 'tcp'])}] 是无线连接的")
+
+    logger.info(
+        f"一共有 [{len(devices)}] 台设备，其中有 [{len([d for d in devices if d.connection_type == 'tcp'])}] 是无线连接的"
+    )
 
     async with anyio.create_task_group() as tg:
         for device in devices:

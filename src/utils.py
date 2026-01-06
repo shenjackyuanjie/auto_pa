@@ -24,15 +24,17 @@ def find_json_value_as_path(data: Any, value: Any) -> List[JSON_PATH]:
     return regex_json_value_as_path(data, value)
 
 
-def regex_json_value_as_path(
-    data: Any, value: re.Pattern | Any
-):
+def regex_json_value_as_path(data: Any, value: re.Pattern | Any):
     result: List[JSON_PATH] = []
 
     if isinstance(data, dict):
         for key, val in data.items():
             # 1. 如果当前值匹配，则将当前键作为路径加入结果
-            if isinstance(value, re.Pattern) and isinstance(val, (str, int, float, bool)) and value.fullmatch(str(val)) is not None:
+            if (
+                isinstance(value, re.Pattern)
+                and isinstance(val, (str, int, float, bool))
+                and value.fullmatch(str(val)) is not None
+            ):
                 result.append([key])
             elif val == value:
                 result.append([key])
@@ -44,7 +46,11 @@ def regex_json_value_as_path(
     elif isinstance(data, list):
         for idx, val in enumerate(data):
             # 1. 如果当前值匹配，则将当前索引作为路径加入结果
-            if isinstance(value, re.Pattern) and isinstance(val, (str, int, float, bool)) and value.fullmatch(str(val)) is not None:
+            if (
+                isinstance(value, re.Pattern)
+                and isinstance(val, (str, int, float, bool))
+                and value.fullmatch(str(val)) is not None
+            ):
                 result.append([idx])
             elif val == value:
                 result.append([idx])
@@ -54,6 +60,7 @@ def regex_json_value_as_path(
                     result.append([idx] + sub_path)  # 关键：路径拼接
 
     return result
+
 
 def find_json_value_by_path(
     data: Any, path: JSON_PATH, raise_error: bool = False
@@ -107,9 +114,7 @@ def parse_bounds(bounds: str) -> tuple[int, int, int, int]:
     return x1, y1, x2, y2
 
 
-def is_in_area(
-    input_bounds: str, area_bounds: str, tolerance: int = 0
-) -> bool:
+def is_in_area(input_bounds: str, area_bounds: str, tolerance: int = 0) -> bool:
     """
     判断输入的 bounds 是否在指定的 area_bounds 内
     """
@@ -122,6 +127,7 @@ def is_in_area(
         and x2 <= ax2 + tolerance
         and y2 <= ay2 + tolerance
     )
+
 
 def json_dumps(
     data: Any,

@@ -14,6 +14,7 @@ from src import utils
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
 DEFAULT_TIMEOUT = 30
 
+
 @dataclass
 class AppInfo:
     version_code: int
@@ -30,32 +31,34 @@ class DeviceInfo:
     sn: str
 
     @staticmethod
-    async def init(device: 'Device'):
+    async def init(device: "Device"):
         parameters = [
-            f"param get {x}" for x in (
+            f"param get {x}"
+            for x in (
                 "const.product.devicetype",
                 "const.product.model",
-                "const.product.name"
+                "const.product.name",
             )
-        ] + [
-            "echo '\t\t'",
-            "SP_daemon -deviceinfo"
-        ]
-        
-        (param, deviceinfo) = (line.strip() for line in (await device.shell("; ".join(parameters))).split("\t\t", 1))
+        ] + ["echo '\t\t'", "SP_daemon -deviceinfo"]
+
+        (param, deviceinfo) = (
+            line.strip()
+            for line in (await device.shell("; ".join(parameters))).split("\t\t", 1)
+        )
         device_type, model, name = (line.strip() for line in param.splitlines())
         sn = DeviceInfo._find_value(deviceinfo, "sn")
-        main_screen: tuple[int, int] = tuple(map(int, DeviceInfo._find_value(deviceinfo, "activeMode").split("x", 1))) # type: ignore
+        main_screen: tuple[int, int] = tuple(
+            map(int, DeviceInfo._find_value(deviceinfo, "activeMode").split("x", 1))
+        )  # type: ignore
         return DeviceInfo(name, main_screen, device_type, model, sn)
 
-    
     @staticmethod
     def _find_value(data: str, key: str) -> str:
         for line in data.splitlines():
             if line.startswith(key):
                 return line.split(":")[1].strip()
         return ""
-        
+
 
 class Device:
     def __init__(self, device: str, connection_type: str):
@@ -67,7 +70,7 @@ class Device:
     def __repr__(self) -> str:
         assert self._device_info is not None
         return f"Device({self.display_device_id}, {self.connection_type}, {self.device_type}, {self.model}, {self.name})"
-    
+
     @property
     def tag(self):
         return f"{self.name} ({self.model}, {self.display_device_id})"
@@ -79,12 +82,17 @@ class Device:
             total = len(self.device_id)
             start = 3
             end = max(total - 3, start)
-            return self.device_id[:start] + ("*" * (total - (end - start))) + self.device_id[end:]
+            return (
+                self.device_id[:start]
+                + ("*" * (total - (end - start)))
+                + self.device_id[end:]
+            )
         return self.device_id
+
     @property
     def device_id(self) -> str:
         return self._device
-    
+
     @property
     def connection_type(self) -> str:
         return self._connection_type
@@ -93,7 +101,7 @@ class Device:
     def name(self) -> str:
         assert self._device_info is not None
         return self._device_info.name
-    
+
     @property
     def main_screen(self) -> tuple[int, int]:
         assert self._device_info is not None
@@ -103,7 +111,7 @@ class Device:
     def device_type(self) -> str:
         assert self._device_info is not None
         return self._device_info.device_type
-    
+
     @property
     def model(self) -> str:
         assert self._device_info is not None
@@ -113,32 +121,31 @@ class Device:
     def sn(self) -> str:
         assert self._device_info is not None
         return self._device_info.sn
-        
 
     async def init(self):
         """这里用来初始化一下默认的东西，方便下次快速拿取"""
         # bingfa
         self._device_info = await DeviceInfo.init(self)
         return self
-    
+
     async def shell(
         self,
         *args: str,
         timeout: float = DEFAULT_TIMEOUT,
     ) -> str:
         # quote_args = (shlex.quote(arg) for arg in args)
-        res = (await _exec(*("shell", *args), timeout=timeout, device=self.device_id)).stdout.decode(
-            "utf-8", errors="ignore"
-        )
+        res = (
+            await _exec(*("shell", *args), timeout=timeout, device=self.device_id)
+        ).stdout.decode("utf-8", errors="ignore")
         return res
-            
+
     async def get_ping(self):
         if self.connection_type != "tcp":
             return -1
         try:
             host, port = self.device_id.rsplit(":", 1)
             start_time = runtime.perf_counter_ns()
-            r, w = (await asyncio.open_connection(host, int(port)))
+            r, w = await asyncio.open_connection(host, int(port))
             w.close()
             await w.wait_closed()
             end_time = runtime.perf_counter_ns()
@@ -146,9 +153,11 @@ class Device:
         except Exception:
             logger.traceback()
             return -1
-    
+
     async def _dump_layout_to_text(self) -> str:
-        res = await self.shell("export DUMPLAYOUT_TMP=$(uitest dumpLayout | cut -d ':' -f2-); cat $DUMPLAYOUT_TMP; rm $DUMPLAYOUT_TMP")
+        res = await self.shell(
+            "export DUMPLAYOUT_TMP=$(uitest dumpLayout | cut -d ':' -f2-); cat $DUMPLAYOUT_TMP; rm $DUMPLAYOUT_TMP"
+        )
         return res
 
     async def dump_layout_to_json(self, fuck_usb_connection: bool = True) -> Any:
@@ -163,13 +172,15 @@ class Device:
         except Exception:
             logger.traceback()
             return res
-        
+
     async def click_pos(
         self,
         x: float,
         y: float,
     ):
-        await self.shell("uinput", "-M", "-m", f"{int(x)}", f"{int(y)}", "-d", "0", "-u", "0")
+        await self.shell(
+            "uinput", "-M", "-m", f"{int(x)}", f"{int(y)}", "-d", "0", "-u", "0"
+        )
 
     async def click_pos_by_scale(
         self,
@@ -180,16 +191,18 @@ class Device:
         await self.click_pos(main_screen[0] * x_scale, main_screen[1] * y_scale)
 
     async def click_by_bounds(
-            self,
-        bounds: tuple[float, float, float, float] | str, wait_for: float = 0.75
+        self, bounds: tuple[float, float, float, float] | str, wait_for: float = 0.75
     ):
         bounds = utils.parse_bounds(bounds) if isinstance(bounds, str) else bounds
         await self.click_pos((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2)
         await anyio.sleep(wait_for)
 
     async def roll_to_y(
-            self,
-        x_scale: float, y_scale: float, roll_distance: float, wait_for: float = 1.5
+        self,
+        x_scale: float,
+        y_scale: float,
+        roll_distance: float,
+        wait_for: float = 0.85,
     ):
         main_screen = self.main_screen
         scroll = roll_distance // 15 + (
@@ -207,13 +220,14 @@ class Device:
         await anyio.sleep(wait_for)
 
     async def simple_roll_down(
-            self,
-        x_scale: float, y_scale: float, roll_scale: float, wait_for: float = 1.5
+        self, x_scale: float, y_scale: float, roll_scale: float, wait_for: float = 0.85
     ):
         main_screen = self.main_screen
         await self.roll_to_y(x_scale, y_scale, main_screen[1] * roll_scale, wait_for)
 
-    async def drag_to_back(self,):
+    async def drag_to_back(
+        self,
+    ):
         # uinput -M -g 200 650 500 300 15000
         main_screen = self.main_screen
         from_x, to_x = 0, main_screen[0] * 0.7
@@ -228,12 +242,14 @@ class Device:
             "1200",
         )
 
-    async def reset_pointer(self,):
+    async def reset_pointer(
+        self,
+    ):
         await self.shell("uinput", "-M", "-m", "0", "0", "-d", "0", "-u", "0")
 
     async def open_app(self, package: str, ability: str):
         await self.shell("aa", "start", "-a", ability, "-b", package)
-        
+
     async def close_app(self, package: str):
         await self.shell("aa", "force-stop", package)
 
@@ -242,19 +258,22 @@ class Device:
             return self._bottom_bar
         layout = await self.dump_layout_to_json()
         # com.huawei.hms.floatingnavigation
-        paths = utils.find_json_value_as_path(layout, "com.huawei.hms.floatingnavigation")
+        paths = utils.find_json_value_as_path(
+            layout, "com.huawei.hms.floatingnavigation"
+        )
         if not paths:
             pos = (
                 self.main_screen[0] // 3,
                 int(self.main_screen[1] * 0.95),
             )
-            size = (
-                self.main_screen[0] // 3,
-                int(self.main_screen[1] * 0.05)
+            size = (self.main_screen[0] // 3, int(self.main_screen[1] * 0.05))
+            self._bottom_bar = (
+                f"[{pos[0]},{pos[1]}][{pos[0] + size[0]},{pos[1] + size[1]}]"
             )
-            self._bottom_bar = f"[{pos[0]},{pos[1]}][{pos[0] + size[0]},{pos[1] + size[1]}]"
             return self._bottom_bar
-        self._bottom_bar = utils.find_json_value_by_prev_path(layout, paths[0])["bounds"]
+        self._bottom_bar = utils.find_json_value_by_prev_path(layout, paths[0])[
+            "bounds"
+        ]
         assert self._bottom_bar is not None, "bottom bar not found"
         return self._bottom_bar
 
@@ -271,6 +290,7 @@ class Device:
 
 
 _devices: dict[str, Device] = {}
+
 
 class HilogProcess:
     def __init__(self, device_id: str, *args: str):
@@ -384,22 +404,26 @@ async def _exec(
         if res.returncode != 0:
             raise RuntimeError(res.stderr.decode("utf-8"))
         return res
-    
+
+
 async def shell(
     *args: str,
     device: str,
     timeout: float = DEFAULT_TIMEOUT,
 ) -> str:
     # quote_args = (shlex.quote(arg) for arg in args)
-    res = (await _exec(*("shell", *args), timeout=timeout, device=device)).stdout.decode(
-        "utf-8", errors="ignore"
-    )
+    res = (
+        await _exec(*("shell", *args), timeout=timeout, device=device)
+    ).stdout.decode("utf-8", errors="ignore")
     return res
+
 
 async def _get_sn(
     device: str,
 ):
-    res = (await shell("SP_daemon", "-deviceinfo", timeout=DEFAULT_TIMEOUT, device=device)).splitlines()
+    res = (
+        await shell("SP_daemon", "-deviceinfo", timeout=DEFAULT_TIMEOUT, device=device)
+    ).splitlines()
     """sn: """
     # find it
     for line in res:
@@ -408,40 +432,41 @@ async def _get_sn(
     raise RuntimeError("can not find sn")
 
 
-
 async def refresh_targets():
     res = (await _exec("list", "targets", "-v")).stdout.decode("utf-8")
     devices = sorted(
-        [(line.split("\t\t", 1)[0], line.split("\t\t", 1)[1].split("\t", 1)[0]) for line in res.strip().splitlines() if line.strip() and 'Connected' in line],
+        [
+            (line.split("\t\t", 1)[0], line.split("\t\t", 1)[1].split("\t", 1)[0])
+            for line in res.strip().splitlines()
+            if line.strip() and "Connected" in line
+        ],
         key=lambda x: x[1],
     )
-    sns = await gather(
-        *[_get_sn(device) for device, _ in devices]
-    )
+    sns = await gather(*[_get_sn(device) for device, _ in devices])
     # 如果不存在则添加，如果devices没有的话，_devices有则删除
     new_devices = []
     for (device, connection_type), sn in zip(devices, sns):
         if device not in _devices:
             _devices[sn] = Device(device, connection_type=connection_type)
             new_devices.append(sn)
-    
-    # init 
-    await gather(
-        *[_devices[sn].init() for sn in new_devices]
-    )
 
-    
+    # init
+    await gather(*[_devices[sn].init() for sn in new_devices])
+
     for device in list(_devices.keys()):
         if device not in sns:
             del _devices[device]
+
 
 async def get_targets():
     await refresh_targets()
     return _devices
 
+
 async def get_devices():
     await refresh_targets()
     return list(_devices.values())
+
 
 async def get_device(sn: str):
     await refresh_targets()
