@@ -37,7 +37,7 @@ APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
 APPGALLERY_ABILITY = "MainAbility"
 FUCKOFF_APPGALLERY_UPDATE = datetime.datetime.fromtimestamp(1767627470.362)
 FUCKOFF_APPGALLERY_VERSION_CODE: int = 1460801300
-FUCKOFF_SUB_CHUNKS = [re.compile("新鲜(应用|游戏)"), re.compile("时下畅销新鲜(应用|游戏)")]
+FUCKOFF_SUB_CHUNKS = [re.compile("新鲜(应用|游戏)"), re.compile("时下畅销(应用|游戏)")]
 global_var: defaultdict[str, StorageValue] = defaultdict(lambda: StorageValue())
 hilog_processes: dict[str, hdc.HilogProcess] = {}
 skip_app_check = False
@@ -228,7 +228,7 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
             if current_chunks == len(clicked_chunks):
                 if retries >= 3:
                     display_chunks = ", ".join(map(lambda x: f"[{x}]", clicked_chunks))
-                    logger.debug(f"[{device.tag}] 怎么只有 {display_chunks} 呢？")
+                    logger.warning(f"[{device.tag}] [{category}] 怎么只有 {display_chunks} 呢？")
                     break
                 retries += 1
             await device.simple_roll_down(0.5, 0.2, 0.72)
