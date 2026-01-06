@@ -1,5 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
+import datetime
+import re
 from typing import Optional
 import anyio
 from src import hdc, utils, hmgallery as gallery
@@ -29,6 +31,7 @@ class PullResult:
 
 APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
 APPGALLERY_ABILITY = "MainAbility"
+FUCKOFF_APPGALLERY_UPDATE = datetime.datetime.fromtimestamp(1767627470.362)
 global_var: defaultdict[str, StorageValue] = defaultdict(lambda: StorageValue())
 hilog_processes: dict[str, hdc.HilogProcess] = {}
 skip_app_check = False
@@ -70,6 +73,11 @@ async def device_main(
 async def inner_device_main(device: hdc.Device):
     logger.info(f"[{device.tag}] 设备类型 [{device.device_type}]")
     global_var[device.sn].phone = device.device_type == "phone"
+
+    app_gallery_info = await device.get_app_info(APPGALLERY_PKG)
+    if app_gallery_info is not None:
+        logger.info(f"[{device.tag}] 应用商店版本 [{app_gallery_info.version_name} ({app_gallery_info.version_code})] 更新时间 [{app_gallery_info.update_time}]")
+
     async with hdc.HilogProcess(device.device_id, "-e", "dashboard_shared", "-T", "JSAPP") as p:
         hilog_processes[device.sn] = p
         if fast_pull:
@@ -102,8 +110,9 @@ async def go_app_page(device: hdc.Device):
 
 async def go_categories_page(device: hdc.Device):
     layout = await device.dump_layout_to_json()
+    paths = utils.regex_json_value_as_path(layout, re.compile("^Paf_Lantern_(?:Select_|Normal_)?Image(?:_1)?$"))
     btn = utils.find_json_value_by_prev_path(
-        layout, utils.find_json_value_as_path(layout, "Paf_Lantern_Image")[2]
+        layout, paths[0] if (len(paths) // 2) == 1 else paths[2]
     )["bounds"]
     await device.click_by_bounds(btn)
 

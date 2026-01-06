@@ -21,12 +21,20 @@ def find_json_value_as_path(data: Any, value: Any) -> List[JSON_PATH]:
     在嵌套的字典/列表中，查找所有值与 `value` 相等的完整路径。
     路径格式为 `JSON_PATH` 类型，例如：`['store', 'book', 1, 'price']` 代表 `$.store.book[1].price`
     """
+    return regex_json_value_as_path(data, value)
+
+
+def regex_json_value_as_path(
+    data: Any, value: re.Pattern | Any
+):
     result: List[JSON_PATH] = []
 
     if isinstance(data, dict):
         for key, val in data.items():
             # 1. 如果当前值匹配，则将当前键作为路径加入结果
-            if val == value:
+            if isinstance(value, re.Pattern) and isinstance(val, (str, int, float, bool)) and value.fullmatch(str(val)) is not None:
+                result.append([key])
+            elif val == value:
                 result.append([key])
             # 2. 如果是嵌套结构，递归查找，并将当前键添加到子路径的开头
             elif isinstance(val, (dict, list)):
@@ -36,7 +44,9 @@ def find_json_value_as_path(data: Any, value: Any) -> List[JSON_PATH]:
     elif isinstance(data, list):
         for idx, val in enumerate(data):
             # 1. 如果当前值匹配，则将当前索引作为路径加入结果
-            if val == value:
+            if isinstance(value, re.Pattern) and isinstance(val, (str, int, float, bool)) and value.fullmatch(str(val)) is not None:
+                result.append([idx])
+            elif val == value:
                 result.append([idx])
             # 2. 如果是嵌套结构，递归查找，并将当前索引添加到子路径的开头
             elif isinstance(val, (dict, list)):
@@ -44,7 +54,6 @@ def find_json_value_as_path(data: Any, value: Any) -> List[JSON_PATH]:
                     result.append([idx] + sub_path)  # 关键：路径拼接
 
     return result
-
 
 def find_json_value_by_path(
     data: Any, path: JSON_PATH, raise_error: bool = False

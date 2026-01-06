@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+import datetime
 import json
 import os
 from typing import Any, Optional
@@ -12,6 +13,13 @@ from src import utils
 
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
 DEFAULT_TIMEOUT = 30
+
+@dataclass
+class AppInfo:
+    version_code: int
+    version_name: str
+    update_time: datetime.datetime
+
 
 @dataclass
 class DeviceInfo:
@@ -250,6 +258,16 @@ class Device:
         assert self._bottom_bar is not None, "bottom bar not found"
         return self._bottom_bar
 
+    async def get_app_info(self, package: str) -> Optional[AppInfo]:
+        res = (await self.shell("bm", "dump", "-n", package)).strip()
+        if res.startswith("error"):
+            return None
+        res = json.loads(res.strip(f"{package}:").strip())
+        return AppInfo(
+            version_code=res["versionCode"],
+            version_name=res["versionName"],
+            update_time=datetime.datetime.fromtimestamp(res["updateTime"] / 1000.0),
+        )
 
 
 _devices: dict[str, Device] = {}
