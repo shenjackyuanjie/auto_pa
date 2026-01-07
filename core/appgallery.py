@@ -7,7 +7,7 @@ import anyio
 from src import hdc, utils, hmgallery as gallery
 from src.logger import logger
 from tianxiu2b2t.utils import runtime
-from tianxiu2b2t.units import format_count_time
+from tianxiu2b2t.units import format_count_time, parse_time_units
 
 
 @dataclass
@@ -32,6 +32,11 @@ class PullResult:
         self.total += val.total
         self.new += val.new
 
+@dataclass
+class Loop:
+    max: int
+    current: int = 0
+
 
 APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
 APPGALLERY_ABILITY = "MainAbility"
@@ -49,7 +54,7 @@ ping = 15
 pulled_apps: defaultdict[str, list[str]] = defaultdict(list)
 pull_res: defaultdict[str, PullResult] = defaultdict(lambda: PullResult())
 repeated_apps: bool = False
-
+loop: Loop = Loop(0)
 
 async def device_main(device: hdc.Device):
     start_time = runtime.perf_counter_ns()
@@ -440,27 +445,7 @@ async def start_app(device: hdc.Device):
     logger.success(f"[{device.tag}] [AppGallery] 启动！")
 
 
-async def main(args):
-    global \
-        skip_app_check, \
-        gallery_base_url, \
-        fast_pull, \
-        skip_app_categories, \
-        skip_categories, \
-        ping
-
-    skip_app_check = args.skip_apps_check
-    gallery_base_url = args.gallery_api
-    fast_pull = args.fast_pull
-    skip_app_categories = args.skip_app_categories
-    skip_categories = args.skip_categories
-    ping = args.ping
-
-    logger.info("AppGallery Pull Ciallo～ (∠・ω< )⌒★")
-    logger.info(f"App Gallery API [{gallery_base_url}]")
-    if skip_app_check:
-        logger.info("跳过应用检查")
-    gallery.init_gallery(gallery_base_url)
+async def inner_main():
     devices = await hdc.get_devices()
     for device in devices:
         logger.info(f"设备信息 [{device.tag}]")
@@ -472,5 +457,48 @@ async def main(args):
     async with anyio.create_task_group() as tg:
         for device in devices:
             tg.start_soon(device_main, device)
+
+async def main(args):
+    global \
+        skip_app_check, \
+        gallery_base_url, \
+        fast_pull, \
+        skip_app_categories, \
+        skip_categories, \
+        ping, \
+        loop
+
+    skip_app_check = args.skip_apps_check
+    gallery_base_url = args.gallery_api
+    fast_pull = args.fast_pull
+    skip_app_categories = args.skip_app_categories
+    skip_categories = args.skip_categories
+    ping = args.ping
+    loop = Loop(args.loop)
+    loop_wait = parse_time_units(args.loop_wait)
+
+    logger.info("AppGallery Pull Ciallo～ (∠・ω< )⌒★")
+    logger.info(f"App Gallery API [{gallery_base_url}]")
+    if skip_app_check:
+        logger.info("跳过应用检查")
+    gallery.init_gallery(gallery_base_url)
+    logger.info(f"AppGallery 初始化完成，需要爬取 [{loop.max}] 轮")
+
+    while loop.current < loop.max:
+        start = runtime.perf_counter_ns()
+        logger.info(f"开始第 [{loop.current + 1}] 轮")
+        try:
+            await inner_main()
+        except Exception as e:
+            logger.error(f"发生错误：{e}")
+            logger.error("正在重试...")
+        finally:
+            end = runtime.perf_counter_ns()
+            logger.info(f"第 [{loop.current + 1}] 轮结束，耗时 [{format_count_time(end - start)}]")
+        loop.current += 1
+        logger.info(f"第 [{loop.current}] 轮结束")
+        if loop.current < loop.max:
+            logger.info(f"下一轮开始时间：[{datetime.datetime.now() + datetime.timedelta(seconds=loop_wait)}]")
+            await anyio.sleep(loop_wait)
 
     logger.info("AppGallery Pull 结束")
