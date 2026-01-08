@@ -31,5 +31,7 @@ if __name__ == "__main__":
             logger.info("KeyboardInterrupt")
         except Exception as e:
             logger.traceback(e)
+        except:  # noqa: E722
+            logger.traceback()
         finally:
             logger.info("Exiting...")
