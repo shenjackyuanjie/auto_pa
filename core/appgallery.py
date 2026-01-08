@@ -21,7 +21,7 @@ class StorageValue:
     app_share_to_gallery_btn: Optional[str] = None
     app_direct_share_to_gallery_btn: Optional[str] = None
     app_info_version: int = 0
-    is_new_ui: Optional[bool] = False
+    is_new_ui: Optional[bool] = None
 
 
 @dataclass
