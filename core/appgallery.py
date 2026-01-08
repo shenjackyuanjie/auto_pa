@@ -21,6 +21,7 @@ class StorageValue:
     app_share_to_gallery_btn: Optional[str] = None
     app_direct_share_to_gallery_btn: Optional[str] = None
     app_info_version: int = 0
+    is_new_ui: Optional[bool] = False
 
 
 @dataclass
@@ -198,11 +199,21 @@ async def pull_categories(device: hdc.Device):
             break
         await device.simple_roll_down(0.5, 0.2, 0.72)
 
+async def get_new_ui(device: hdc.Device) -> bool:
+    if (val := global_var[device.sn].is_new_ui) is not None:
+        return val
+    layout = await device.dump_layout_to_json()
+    val = sum([len(utils.find_json_value_as_path(layout, chunk)) for chunk in FUCKOFF_SUB_CHUNKS]) != 0
+    global_var[device.sn].is_new_ui = val
+    return val
 
 async def pull_chunk_in_category(device: hdc.Device, category: str):
     # 因为沟槽的华为更新了应用市场，所以现在需要先点进去分类，然后点进去子分类，最后再点进去应用
+    # patch: 傻逼华为，妈的，为什么还要分设备的应用市场，草泥马的
+    layout = await device.dump_layout_to_json()
+    new_ui = await get_new_ui(device)
     exit_btn = None
-    if global_var[device.sn].app_info_version < FUCKOFF_APPGALLERY_VERSION_CODE:
+    if not new_ui or global_var[device.sn].app_info_version < FUCKOFF_APPGALLERY_VERSION_CODE:
         await start_pull_apps(device, category)
     else:
         clicked_chunks = []
