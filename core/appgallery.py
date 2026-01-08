@@ -213,7 +213,8 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
     layout = await device.dump_layout_to_json()
     new_ui = await get_new_ui(device)
     exit_btn = None
-    if not new_ui or global_var[device.sn].app_info_version < FUCKOFF_APPGALLERY_VERSION_CODE:
+    # or global_var[device.sn].app_info_version < FUCKOFF_APPGALLERY_VERSION_CODE
+    if not new_ui:
         await start_pull_apps(device, category)
     else:
         clicked_chunks = []
