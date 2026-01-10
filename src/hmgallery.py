@@ -132,16 +132,19 @@ class HMGallery:
                 pkgs,
                 await gather(
                     *(
-                        self.submit_app(pkg, comment.clone() if comment else None)
+                        self.submit_app(pkg, None, comment.clone() if comment else None)
                         for pkg in pkgs
                     )
                 ),
             )
         )
 
-    async def _submit_app_impl(self, pkg: str, comment: CommentInfo) -> bool:
+    async def _submit_app_impl(self, pkg: Optional[str], app_id: Optional[str], comment: CommentInfo) -> bool:
+        data = {"pkg_name": pkg, "app_id": app_id, "comment": comment.to_json()}
+        # del None
+        data = {k: v for k, v in data.items() if v is not None}
         resp = await self.client.post(
-            "submit", json={"pkg_name": pkg, "comment": comment.to_json()}
+            "submit", json=data
         )
         if resp.status_code != 200:
             return False
@@ -150,15 +153,15 @@ class HMGallery:
             return True
         return False
 
-    async def submit_app(self, pkg: str, comment: Optional[CommentInfo] = None) -> bool:
+    async def submit_app(self, pkg: Optional[str], app_id: Optional[str], comment: Optional[CommentInfo] = None) -> bool:
         comment = comment or CommentInfo()
         comment.platform = "auto_pa"
         retry = 0
         while retry < 3:
             try:
-                return await self._submit_app_impl(pkg, comment)
+                return await self._submit_app_impl(pkg, app_id, comment)
             except Exception as e:
-                logger.traceback(f"submit app {pkg} failed: {e}")
+                logger.traceback(f"submit app {pkg or app_id} failed: {e}")
                 retry += 1
                 await anyio.sleep(5)
         return False

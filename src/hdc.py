@@ -14,7 +14,6 @@ from src import utils
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
 DEFAULT_TIMEOUT = 30
 
-
 @dataclass
 class AppInfo:
     version_code: int
@@ -304,7 +303,7 @@ class HilogProcess:
             await self._process.wait()
 
     async def __aenter__(self):
-        cmd = [hdc_path, "-t", self.device_id, "shell", "hilog", *self._args]
+        cmd = [hdc_path, "-t", self.device_id, "shell", "hilog", "-v", "epoch", *self._args]
         command = " ".join(cmd)
         logger.debug(f"hdc [{command}]")
 
@@ -384,6 +383,17 @@ class HilogProcess:
                     f"Ignored error during process termination in __del__: {e}"
                 )
         logger.debug("HilogProcess instance deleted.")
+
+@dataclass
+class HilogLineParsed:
+    time: datetime.datetime
+    parent_pid: int
+    pid: int
+    level: str
+    prefix: str
+    pkg: str
+    ability: str
+    log: str
 
 
 async def _exec(
@@ -471,3 +481,39 @@ async def get_devices():
 async def get_device(sn: str):
     await refresh_targets()
     return _devices[sn]
+
+
+def parse_hilog_line(line: str) -> Optional[HilogLineParsed]:
+    # epoch: <17658297195.000> <parentpid> <pid> <level> <type_prefix><prefix_id>/<pkg>/<ability>: <log>
+    # first split
+    parts = []
+    start = 0
+    while len(parts) < 5:
+        part = line[start:].split(" ", 1)[0]
+        if not part.strip():
+            start += 1
+            continue
+        parts.append(part)
+        start += len(part) + 1
+    
+    time = datetime.datetime.fromtimestamp(float(parts[0]))
+    parent_pid = int(parts[1])
+    pid = int(parts[2])
+    level = parts[3]
+    try:
+        (prefix, pkg, ability) = parts[4].split("/", 2)
+    except ValueError:
+        (prefix, ability) = parts[4].split("/", 1)
+        pkg = ""
+        return None
+    ability = ability.rstrip(":")
+    return HilogLineParsed(
+        time=time,
+        parent_pid=parent_pid,
+        pid=pid,
+        level=level,
+        prefix=prefix,
+        pkg=pkg,
+        ability=ability,
+        log=line[start:].strip(),
+    )

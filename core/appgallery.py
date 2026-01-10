@@ -39,13 +39,18 @@ class Loop:
     current: int = 0
 
 
+@dataclass
+class HiLogProcesses:
+    dashboard_process: hdc.HilogProcess
+    appgallery_hilog: hdc.HilogProcess
+
 APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
 APPGALLERY_ABILITY = "MainAbility"
 FUCKOFF_APPGALLERY_UPDATE = datetime.datetime.fromtimestamp(1767627470.362)
 FUCKOFF_APPGALLERY_VERSION_CODE: int = 1460801300
 FUCKOFF_SUB_CHUNKS = [re.compile("新鲜(应用|游戏)"), re.compile("时下畅销(应用|游戏)")]
 global_var: defaultdict[str, StorageValue] = defaultdict(lambda: StorageValue())
-hilog_processes: dict[str, hdc.HilogProcess] = {}
+hilog_processes: dict[str, HiLogProcesses] = {}
 skip_app_check = False
 gallery_base_url = "https://hmos.txit.top/api"
 fast_pull = False
@@ -56,6 +61,10 @@ pulled_apps: defaultdict[str, list[str]] = defaultdict(list)
 pull_res: defaultdict[str, PullResult] = defaultdict(lambda: PullResult())
 repeated_apps: bool = False
 loop: Loop = Loop(0)
+only_rolldown: bool = False
+username: Optional[str] = None
+pulled_pkgs: set[str] = set()
+pulled_app_ids: set[str] = set()
 
 async def device_main(device: hdc.Device):
     start_time = runtime.perf_counter_ns()
@@ -101,8 +110,13 @@ async def inner_device_main(device: hdc.Device):
 
     async with hdc.HilogProcess(
         device.device_id, "-e", "dashboard_shared", "-T", "JSAPP"
-    ) as p:
-        hilog_processes[device.sn] = p
+    ) as dashboard_process, hdc.HilogProcess(
+        device.device_id,
+    ) as appgallery_hilog, anyio.create_task_group() as task_group:
+        hilog_processes[device.sn] = HiLogProcesses(
+            dashboard_process=dashboard_process, appgallery_hilog=appgallery_hilog
+        )
+        task_group.start_soon(pull_in_appgallery_logs, device)
         if fast_pull:
             await start_pull_apps(device)
         else:
@@ -287,13 +301,14 @@ async def start_pull_apps(device: hdc.Device, category: Optional[str] = None):
             apps_pos[text] = app_pos
             logger.debug(f"[{device.tag}] [{text}] [{app_pos}]")
 
-        pending_new_apps = await get_not_exists_apps(cur_apps)
-        for app in pending_new_apps:
-            logger.success(f"[{device.tag}] 发现新应用 [{app}]")
-            await device.click_by_bounds(apps_pos[app], 1 + ping * 0.05)
-            # detail
-            await share_app(device, app)
-            new_apps.append(app)
+        if not only_rolldown:
+            pending_new_apps = await get_not_exists_apps(cur_apps)
+            for app in pending_new_apps:
+                logger.success(f"[{device.tag}] 发现新应用 [{app}]")
+                await device.click_by_bounds(apps_pos[app], 1 + ping * 0.05)
+                # detail
+                await share_app(device, app)
+                new_apps.append(app)
 
         await device.simple_roll_down(0.5, 0.175, 0.8)
         if current_apps_len == len(apps):
@@ -355,7 +370,7 @@ async def share_app(device: hdc.Device, app_name: str):
 
 async def find_app_link_in_logs(device: hdc.Device):
     hilog_process = hilog_processes[device.sn]
-    while line := await hilog_process.readline():
+    while line := await hilog_process.dashboard_process.readline():
         if "dashboard_shared" in line:
             return line
     return None
@@ -445,7 +460,49 @@ def all_pulled_apps():
         res = res.union(set(apps))
     return res
 
+async def submit_app(
+    device: hdc.Device,
+    pkg: Optional[str],
+    app_id: Optional[str]
+):
+    if pkg is None and app_id is None:
+        return
+    commit_app = pkg or app_id
+    assert commit_app is not None
+    logger.info(f"[{device.tag}] 正在提交应用 [{commit_app}]")
+    res = await gallery.get_gallery().submit_app(pkg, app_id, gallery.CommentInfo(
+        user=username
+    ))
+    if res:
+        logger.success(f"[{device.tag}] 提交成功")
+    else:
+        logger.error(f"[{device.tag}] 提交失败")
 
+async def pull_in_appgallery_logs(
+    device: hdc.Device,
+):
+    # pulled_pkgs: set[str] = set()
+    # pulled_app_ids: set[str] = set()
+    process = hilog_processes[device.sn].appgallery_hilog
+    async with anyio.create_task_group() as tg:
+        while line := await process.readline():
+            res = hdc.parse_hilog_line(line)
+            if res is None:
+                continue
+            if res.level != "E" or "GetSpecifiedDistributionType failed -n" not in res.log:
+                continue
+            parsed_res = utils.parse_input_split_links_pkgs_and_app_ids(res.log)
+            for pkg in parsed_res.pkgs:
+                if pkg in pulled_pkgs:
+                    continue
+                pulled_pkgs.add(pkg)
+                # logger.info(f"[{device.tag}] 拉取应用 [{pkg}] 成功！")
+
+            for app_id in parsed_res.app_ids:
+                if app_id in pulled_app_ids:
+                    continue
+                pulled_app_ids.add(app_id)
+                # logger.info(f"[{device.tag}] 拉取应用 [{app_id}] 成功！")
 
 async def start_app(device: hdc.Device):
     logger.info(f"[{device.tag}] 正在关闭 [AppGallery]")
@@ -478,7 +535,9 @@ async def main(args):
         skip_app_categories, \
         skip_categories, \
         ping, \
-        loop
+        loop, \
+        only_rolldown, \
+        username
 
     skip_app_check = args.skip_apps_check
     gallery_base_url = args.gallery_api
@@ -488,11 +547,18 @@ async def main(args):
     ping = args.ping
     loop = Loop(args.loop)
     loop_wait = parse_time_units(args.loop_wait)
+    only_rolldown = args.only_rolldown
+    username = args.username
 
     logger.info("AppGallery Pull Ciallo～ (∠・ω< )⌒★")
     logger.info(f"App Gallery API [{gallery_base_url}]")
     if skip_app_check:
         logger.info("跳过应用检查")
+
+    if only_rolldown and (username is None or not username.strip()):
+        logger.error("当 only_rolldown 为 True 时，必须指定 username")
+        return
+
     gallery.init_gallery(gallery_base_url)
     logger.info(f"AppGallery 初始化完成，需要爬取 [{loop.max}] 轮")
 
