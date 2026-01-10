@@ -497,11 +497,13 @@ async def pull_in_appgallery_logs(
                     continue
                 pulled_pkgs.add(pkg)
                 # logger.info(f"[{device.tag}] 拉取应用 [{pkg}] 成功！")
+                tg.start_soon(submit_app, device, pkg, None)
 
             for app_id in parsed_res.app_ids:
                 if app_id in pulled_app_ids:
                     continue
                 pulled_app_ids.add(app_id)
+                tg.start_soon(submit_app, device, None, app_id)
                 # logger.info(f"[{device.tag}] 拉取应用 [{app_id}] 成功！")
 
 async def start_app(device: hdc.Device):
