@@ -474,9 +474,9 @@ async def submit_app(
         user=username
     ))
     if res:
-        logger.success(f"[{device.tag}] 提交成功")
+        logger.success(f"[{device.tag}] 提交 [{commit_app}] 成功")
     else:
-        logger.error(f"[{device.tag}] 提交失败")
+        logger.error(f"[{device.tag}] 提交 [{commit_app}] 失败")
 
 async def pull_in_appgallery_logs(
     device: hdc.Device,
