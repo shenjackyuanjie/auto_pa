@@ -3,7 +3,7 @@ name = "auto-pa"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.10"
 dependencies = [
     "anyio>=4.12.0",
     "diskcache>=5.6.3",
@@ -12,4 +12,5 @@ dependencies = [
     "loguru>=0.7.3",
     "requests>=2.32.5",
     "tianxiu2b2t-utils>=0.1.36",
+    "zstandard>=0.25.0",
 ]

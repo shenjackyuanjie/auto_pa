@@ -8,106 +8,30 @@ from src import hdc, utils, hmgallery as gallery
 from src.logger import logger
 from tianxiu2b2t.utils import runtime
 from tianxiu2b2t.units import format_count_time, parse_time_units
+from .common import go_categories_page, go_app_page, go_game_page
+from core import common
 
+class AppGalleryGalleryDevice(common.AppGalleryCommonDevice):
+    def __init__(self, device: hdc.Device):
+        super().__init__(device)
+        self.process: hdc.HilogProcess = None # type: ignore
+    
+    def set_process(self, process: hdc.HilogProcess):
+        self.process = process
 
-@dataclass
-class StorageValue:
-    phone: bool = False
-    tab_app_btn: Optional[str] = None
-    tab_game_btn: Optional[str] = None
-    app_exit_btn: Optional[str] = None
-    app_share_btn: Optional[str] = None
-    app_share_with_gallery_btn: Optional[str] = None
-    app_share_to_gallery_btn: Optional[str] = None
-    app_direct_share_to_gallery_btn: Optional[str] = None
-    app_info_version: int = 0
-    is_new_ui: Optional[bool] = None
+@common.device_main(device_class=AppGalleryGalleryDevice)
+async def device_main(device: common.AppGalleryCommonDevice):
+    async with hdc.HilogProcess(
+        device.device_id, "-e", "dashboard_shared", "-T", "JSAPP"
+    ) as dashboard_process:
+        device.set_process(dashboard_process)
 
+        if common.fast_pull:
+            await device.start_pull_apps()
 
-@dataclass
-class PullResult:
-    total: int = 0
-    new: int = 0
-
-    def add(self, val: "PullResult"):
-        self.total += val.total
-        self.new += val.new
-
-@dataclass
-class Loop:
-    max: int
-    current: int = 0
-
-
-@dataclass
-class HiLogProcesses:
-    dashboard_process: hdc.HilogProcess
-    appgallery_hilog: hdc.HilogProcess
-
-APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
-APPGALLERY_ABILITY = "MainAbility"
-FUCKOFF_APPGALLERY_UPDATE = datetime.datetime.fromtimestamp(1767627470.362)
-FUCKOFF_APPGALLERY_VERSION_CODE: int = 1460801300
-FUCKOFF_SUB_CHUNKS = [re.compile("新鲜(应用|游戏)"), re.compile("时下畅销(应用|游戏)")]
-global_var: defaultdict[str, StorageValue] = defaultdict(lambda: StorageValue())
-hilog_processes: dict[str, HiLogProcesses] = {}
-skip_app_check = False
-gallery_base_url = "https://hmos.txit.top/api"
-fast_pull = False
-skip_app_categories = False
-skip_categories = []
-ping = 15
-pulled_apps: defaultdict[str, list[str]] = defaultdict(list)
-pull_res: defaultdict[str, PullResult] = defaultdict(lambda: PullResult())
-repeated_apps: bool = False
-loop: Loop = Loop(0)
-only_rolldown: bool = False
-username: Optional[str] = None
-pulled_pkgs: set[str] = set()
-pulled_app_ids: set[str] = set()
-
-async def device_main(device: hdc.Device):
-    start_time = runtime.perf_counter_ns()
-    try:
-        await inner_device_main(device)
-    except:  # noqa: E722
-        logger.traceback(f"[{device.tag}] 发生错误")
-    finally:
-        await device.close_app(APPGALLERY_PKG)
-    end_time = runtime.perf_counter_ns()
-    logger.success(
-        f"[{device.tag}] 耗时 [{format_count_time(end_time - start_time)}] 共 [{pull_res[device.sn].total}] 个应用，新增 [{pull_res[device.sn].new}] 个应用"
-    )
-    no_repeated_apps = set(pulled_apps[device.sn])
-    repeated_apps = set(
-        [app for app in pulled_apps if pulled_apps[device.sn].count(app) > 1]
-    )
-    logger.info(f"[{device.tag}] 共 [{len(no_repeated_apps)}] 个无重复应用")
-    logger.info(f"[{device.tag}] 共 [{len(repeated_apps)}] 个有重复应用")
-    # no_repeated_apps = list(no_repeated_apps)
-    # repeated_apps = [app for app in pulled_apps if no_repeated_apps.count(app) > 1]
-    display_repeated_apps = list(
-        map(
-            lambda app: f"[{app}] [{pulled_apps[device.sn].count(app)}]",
-            sorted(repeated_apps),
-        )
-    )
-    logger.info(f"[{device.tag}] 重复应用:")
-    for i in range(0, len(display_repeated_apps), 5):
-        logger.info(" ".join(display_repeated_apps[i : i + 5]))
 
 
 async def inner_device_main(device: hdc.Device):
-    logger.info(f"[{device.tag}] 设备类型 [{device.device_type}]")
-    global_var[device.sn].phone = device.device_type == "phone"
-
-    app_gallery_info = await device.get_app_info(APPGALLERY_PKG)
-    if app_gallery_info is not None:
-        logger.info(
-            f"[{device.tag}] 应用商店版本 [{app_gallery_info.version_name} ({app_gallery_info.version_code})] 更新时间 [{app_gallery_info.update_time}]"
-        )
-        global_var[device.sn].app_info_version = app_gallery_info.version_code
-
     async with hdc.HilogProcess(
         device.device_id, "-e", "dashboard_shared", "-T", "JSAPP"
     ) as dashboard_process, hdc.HilogProcess(
@@ -130,48 +54,6 @@ async def inner_device_main(device: hdc.Device):
             await go_game_page(device)
             await go_categories_page(device)
             await pull_categories(device)
-
-
-async def go_app_page(device: hdc.Device):
-    if global_var[device.sn].tab_app_btn is None:
-        index_layout = await device.dump_layout_to_json()
-        global_var[device.sn].tab_app_btn = utils.find_json_value_by_prev_path(
-            index_layout,
-            utils.find_json_value_as_path(
-                index_layout, "BadgeImage.sys.symbol.bag_fill"
-            )[0],
-        )["bounds"]
-    btn = global_var[device.sn].tab_app_btn
-    assert btn is not None
-    logger.debug(f"[{device.tag}] 应用按钮位置 [{btn}]")
-    await device.click_by_bounds(btn)
-
-
-async def go_categories_page(device: hdc.Device):
-    layout = await device.dump_layout_to_json()
-    paths = utils.regex_json_value_as_path(
-        layout, re.compile("^Paf_Lantern_(?:Select_|Normal_)?Image(?:_1)?$")
-    )
-    btn = utils.find_json_value_by_prev_path(
-        layout, paths[0] if (len(paths) // 2) == 1 else paths[2]
-    )["bounds"]
-    await device.click_by_bounds(btn)
-
-
-async def go_game_page(device: hdc.Device):
-    if global_var[device.sn].tab_game_btn is None:
-        index_layout = await device.dump_layout_to_json()
-        global_var[device.sn].tab_game_btn = utils.find_json_value_by_prev_path(
-            index_layout,
-            utils.find_json_value_as_path(
-                index_layout, "BadgeImage.sys.symbol.game_fill"
-            )[0],
-        )["bounds"]
-    btn = global_var[device.sn].tab_game_btn
-    assert btn is not None
-    logger.debug(f"[{device.tag}] 游戏按钮位置 [{btn}]")
-    await device.click_by_bounds(btn, 1.75)
-
 
 async def pull_categories(device: hdc.Device):
     pulled_categories = []
@@ -233,14 +115,14 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
     else:
         clicked_chunks = []
         retries = 0
-        while len(clicked_chunks) < len(FUCKOFF_SUB_CHUNKS):
+        while len(clicked_chunks) < len(common.FUCKOFF_SUB_CHUNKS):
             current_chunks = len(clicked_chunks)
             layout = await device.dump_layout_to_json()
             if exit_btn is None:
                 exit_btn = utils.find_json_value_by_prev_path(
                     layout, utils.find_json_value_as_path(layout, "BackButton")[0]
                 )["bounds"]
-            for chunk in FUCKOFF_SUB_CHUNKS:
+            for chunk in common.FUCKOFF_SUB_CHUNKS:
                 # if chunk in clicked_chunks:
                 #     continue
                 chunk_paths = utils.find_json_value_as_path(layout, chunk)
@@ -253,7 +135,7 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
                     utils.find_json_value_by_prev_path(layout, chunk_path)["bounds"],
                     1.75,
                 )
-                await anyio.sleep(1 + ping * 0.05)
+                await anyio.sleep(1 + common.ping * 0.05)
                 await start_pull_apps(device, f"{category} - {match_chunk}")
                 clicked_chunks.append(match_chunk)
                 # roll
@@ -301,11 +183,10 @@ async def start_pull_apps(device: hdc.Device, category: Optional[str] = None):
             apps_pos[text] = app_pos
             logger.debug(f"[{device.tag}] [{text}] [{app_pos}]")
 
-        if not only_rolldown:
             pending_new_apps = await get_not_exists_apps(cur_apps)
             for app in pending_new_apps:
                 logger.success(f"[{device.tag}] 发现新应用 [{app}]")
-                await device.click_by_bounds(apps_pos[app], 1 + ping * 0.05)
+                await device.click_by_bounds(apps_pos[app], 1 + common.ping * 0.05)
                 # detail
                 await share_app(device, app)
                 new_apps.append(app)
@@ -473,10 +354,14 @@ async def submit_app(
     res = await gallery.get_gallery().submit_app(pkg, app_id, gallery.CommentInfo(
         user=username
     ))
-    if res:
+    if not res:
+        logger.error(f"[{device.tag}] 提交 [{commit_app}] 失败")
+        return
+    new_app = res["new_app"]
+    if new_app:
         logger.success(f"[{device.tag}] 提交 [{commit_app}] 成功")
     else:
-        logger.error(f"[{device.tag}] 提交 [{commit_app}] 失败")
+        logger.warning(f"[{device.tag}] 提交 [{commit_app}] 成功，应用已存在")
 
 async def pull_in_appgallery_logs(
     device: hdc.Device,
@@ -516,69 +401,9 @@ async def start_app(device: hdc.Device):
     logger.success(f"[{device.tag}] [AppGallery] 启动！")
 
 
+@common.loop_main
 async def inner_main():
-    devices = await hdc.get_devices()
-    for device in devices:
-        logger.info(f"设备信息 [{device.tag}]")
-
-    logger.info(
-        f"一共有 [{len(devices)}] 台设备，其中有 [{len([d for d in devices if d.connection_type == 'tcp'])}] 是无线连接的"
-    )
-
-    async with anyio.create_task_group() as tg:
-        for device in devices:
-            tg.start_soon(device_main, device)
+    await device_main
 
 async def main(args):
-    global \
-        skip_app_check, \
-        gallery_base_url, \
-        fast_pull, \
-        skip_app_categories, \
-        skip_categories, \
-        ping, \
-        loop, \
-        only_rolldown, \
-        username
-
-    skip_app_check = args.skip_apps_check
-    gallery_base_url = args.gallery_api
-    fast_pull = args.fast_pull
-    skip_app_categories = args.skip_app_categories
-    skip_categories = args.skip_categories
-    ping = args.ping
-    loop = Loop(args.loop)
-    loop_wait = parse_time_units(args.loop_wait)
-    only_rolldown = args.only_rolldown
-    username = args.username
-
-    logger.info("AppGallery Pull Ciallo～ (∠・ω< )⌒★")
-    logger.info(f"App Gallery API [{gallery_base_url}]")
-    if skip_app_check:
-        logger.info("跳过应用检查")
-
-    if only_rolldown and (username is None or not username.strip()):
-        logger.error("当 only_rolldown 为 True 时，必须指定 username")
-        return
-
-    gallery.init_gallery(gallery_base_url)
-    logger.info(f"AppGallery 初始化完成，需要爬取 [{loop.max}] 轮")
-
-    while loop.current < loop.max:
-        start = runtime.perf_counter_ns()
-        logger.info(f"开始第 [{loop.current + 1}] 轮")
-        try:
-            await inner_main()
-        except Exception as e:
-            logger.error(f"发生错误：{e}")
-            logger.error("正在重试...")
-        finally:
-            end = runtime.perf_counter_ns()
-            logger.info(f"第 [{loop.current + 1}] 轮结束，耗时 [{format_count_time(end - start)}]")
-        loop.current += 1
-        logger.info(f"第 [{loop.current}] 轮结束")
-        if loop.current < loop.max:
-            logger.info(f"下一轮开始时间：[{datetime.datetime.now() + datetime.timedelta(seconds=loop_wait)}]")
-            await anyio.sleep(loop_wait)
-
     logger.info("AppGallery Pull 结束")

@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 import datetime
+import io
 import re
 from typing import Any, List
 
@@ -265,3 +266,25 @@ def parse_log_datetime(log: str) -> datetime.datetime:
     date, time, _ = log.split(" ", 2)
     # 12-07 16:01:30.000
     return datetime.datetime.strptime(f"{date} {time}", "%m-%d %H:%M:%S.%f")
+
+class AppInfoBuffer:
+    def __init__(self, content: bytes):
+        self.buf = io.BytesIO(content)
+
+    def read_zigzag_varint(self) -> int:
+        res = 0
+        shift = 0
+        while True:
+            b = self.buf.read(1)
+            if not b:
+                raise EOFError("Unexpected EOF")
+            b = ord(b)
+            res |= (b & 0x7F) << shift
+            if not (b & 0x80):
+                break
+            shift += 7
+        return (res >> 1) ^ -(res & 1)
+    
+    def read_string(self) -> str:
+        length = self.read_zigzag_varint()
+        return self.buf.read(length).decode("utf-8")

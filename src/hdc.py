@@ -10,6 +10,7 @@ from .logger import logger
 from tianxiu2b2t.anyio.concurrency import gather
 from tianxiu2b2t.utils import runtime
 from src import utils
+from graceful_shutdown import ShutdownProtection
 
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
 DEFAULT_TIMEOUT = 30
@@ -296,6 +297,8 @@ class HilogProcess:
         self.device_id = device_id
         self._args = args
         self._process = None
+        self._protection = ShutdownProtection()
+        self._cut_timestamp = None
 
     async def run_forever(self):
         async with self:
@@ -303,9 +306,15 @@ class HilogProcess:
             await self._process.wait()
 
     async def __aenter__(self):
+        # cut off before timestamp log
+        hilog_line = await shell("hilog", "-v", "epoch", "-z", "1", device=self.device_id)
+        log = parse_hilog_line(hilog_line)
+        assert log is not None
+        self._cut_timestamp = log.time
         cmd = [hdc_path, "-t", self.device_id, "shell", "hilog", "-v", "epoch", *self._args]
         command = " ".join(cmd)
         logger.debug(f"hdc [{command}]")
+        self._protection.__enter__()
 
         self._process = await asyncio.create_subprocess_exec(
             *cmd,
@@ -326,6 +335,7 @@ class HilogProcess:
         await self._process.wait()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        self._protection.__exit__(exc_type, exc_val, exc_tb)
         if self._process is None:
             return
 
@@ -366,12 +376,9 @@ class HilogProcess:
         return line_bytes.decode(encoding, errors=errors).rstrip("\n")
 
     async def __aiter__(self):
-        if self._stdout is None:
-            return
-        while True:
-            line = await self.readline()
-            if not line:
-                break
+        while self._stdout is not None and (line := await self.readline()):
+            if self._cut_timestamp is not None and (log := parse_hilog_line(line)) and (log.time < self._cut_timestamp):
+                continue
             yield line
 
     def __del__(self):
@@ -379,7 +386,7 @@ class HilogProcess:
             try:
                 self._process.terminate()
             except Exception as e:
-                logger.debug(
+                logger.warning(
                     f"Ignored error during process termination in __del__: {e}"
                 )
         logger.debug("HilogProcess instance deleted.")
@@ -505,7 +512,6 @@ def parse_hilog_line(line: str) -> Optional[HilogLineParsed]:
     except ValueError:
         (prefix, ability) = parts[4].split("/", 1)
         pkg = ""
-        return None
     ability = ability.rstrip(":")
     return HilogLineParsed(
         time=time,
