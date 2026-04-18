@@ -7,28 +7,20 @@ from tianxiu2b2t.units import format_count_time
 from graceful_shutdown import ShutdownProtection
 
 username: str = ""
+submit_interval: float = 1.0
 
 class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
     def __init__(self, device: hdc.Device):
         super().__init__(device)
 
     async def custom_pull_apps(self, btn_pos: str, category: str) -> common.PullResult:
-        exit_btn = None
         async def pull_chunk_in_categories():
-            nonlocal exit_btn, layout
-            if exit_btn is None:
-                exit_btn = utils.find_json_value_by_prev_path(
-                    layout, utils.find_json_value_as_path(layout, "BackButton")[0]
-                )["bounds"]
+            nonlocal layout
             clicked_chunks: set[str] = set()
             retries = 0
             while len(clicked_chunks) < len(common.FUCKOFF_SUB_CHUNKS):
                 current_chunks = len(clicked_chunks)
                 layout = await self.dump_layout_to_json()
-                if exit_btn is None:
-                    exit_btn = utils.find_json_value_by_prev_path(
-                        layout, utils.find_json_value_as_path(layout, "BackButton")[0]
-                    )["bounds"]
                 for chunk in common.FUCKOFF_SUB_CHUNKS:
                     # if chunk in clicked_chunks:
                     #     continue
@@ -54,11 +46,8 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
                     retries += 1
                 await self.simple_roll_down(0.5, 0.2, 0.72)
 
-        
-        
-        async def inner_app_pulls():
+        async def inner_app_pulls(exit_after_pull: bool = True):
             apps = []
-            exit_btn = None
             bottom_bar = await self.get_bottom_bar()
             while 1:
                 current_apps_len = len(apps)
@@ -91,30 +80,42 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
                 if current_apps_len == len(apps):
                     break
                 # break
-            exit_btn = utils.find_json_value_by_prev_path(
-                layout, utils.find_json_value_as_path(layout, "BackButton")[0]
-            )["bounds"]
-            await self.click_by_bounds(exit_btn)
+            if exit_after_pull:
+                await self.go_back(layout)
 
         pulled_apps: set[str] = set()
         new_apps: set[str] = set()
+        submit_send, submit_recv = anyio.create_memory_object_stream(512)
+
         async def poll_appgallery():
             with ShutdownProtection():
-                async for line in appgallery_hilog:
-                    res = hdc.parse_hilog_line(line)
-                    if res is None:
-                        continue
-                    log = res.log
-                    try:
-                        pkg = log.split("GetSpecifiedDistributionType failed -n ", 1)[1].split(" ret:")[0]
-                    except IndexError:
-                        logger.warning(f"解析日志失败: [{log}]")
-                        continue
-                    if pkg in pulled_apps:
-                        continue
-                    pulled_apps.add(pkg)
-                    logger.debug(f"AppGallery: {pkg}")
-                    tg.start_soon(submit_app, pkg)
+                async with submit_send:
+                    async for line in appgallery_hilog:
+                        res = hdc.parse_hilog_line(line)
+                        if res is None:
+                            continue
+                        log = res.log
+                        try:
+                            pkg = log.split("GetSpecifiedDistributionType failed -n ", 1)[1].split(" ret:")[0]
+                        except IndexError:
+                            logger.warning(f"解析日志失败: [{log}]")
+                            continue
+                        if pkg in pulled_apps:
+                            continue
+                        pulled_apps.add(pkg)
+                        logger.debug(f"AppGallery: {pkg}")
+                        await submit_send.send(pkg)
+
+        async def submit_pending_apps():
+            last_submit_started_at: float | None = None
+            async with submit_recv:
+                async for data in submit_recv:
+                    if submit_interval > 0 and last_submit_started_at is not None:
+                        wait_for = last_submit_started_at + submit_interval - runtime.perf_counter()
+                        if wait_for > 0:
+                            await anyio.sleep(wait_for)
+                    last_submit_started_at = runtime.perf_counter()
+                    await submit_app(data)
 
         async def submit_app(
             data: str
@@ -140,17 +141,15 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
             "-e", "GetSpecifiedDistributionType"
         ) as appgallery_hilog, anyio.create_task_group() as tg:
             tg.start_soon(poll_appgallery)
+            tg.start_soon(submit_pending_apps)
             
             await self.click_by_bounds(btn_pos)
             await anyio.sleep(0.15)
 
             layout = await self.dump_layout_to_json()
-            pre_exit_btn = utils.find_json_value_by_prev_path(
-                layout, utils.find_json_value_as_path(layout, "BackButton")[0]
-            )["bounds"]
             new_ui = await self.get_new_ui()
             if not new_ui:
-                await inner_app_pulls()
+                await inner_app_pulls(exit_after_pull=False)
             else:
                 await pull_chunk_in_categories()
 
@@ -164,7 +163,7 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
         logger.info(
             f"[{self.tag}] {display_category}拉取应用完成, 共 [{len(pulled_apps)}] 个应用，新应用 [{len(new_apps)}] 个，耗时 [{format_count_time(elapsed_time)}] 平均 [{format_count_time(avg_apps)}/个] 新应用平均 [{format_count_time(avg_new_apps)}/个]"
         )
-        await self.click_by_bounds(pre_exit_btn)
+        await self.go_back(wait_for=1.75)
 
         return common.PullResult(
             total=len(pulled_apps),
@@ -195,15 +194,23 @@ async def inner_main():
     await device_main
 
 async def main(args):
-    global username
+    global username, submit_interval
     logger.info("AppGallery Pull Ciallo～ (∠・ω< )⌒★")
     await common.init(args)
 
     username = args.username
+    raw_submit_interval = getattr(args, "submit_interval", 1.0)
+    if raw_submit_interval < 0:
+        logger.warning(f"提交间隔不能小于 0，已改为 [0.00s]")
+    submit_interval = max(raw_submit_interval, 0.0)
     
     logger.info(f"App Gallery API [{common.gallery_base_url}]")
     if common.skip_app_check:
         logger.info("跳过应用检查")
+    if submit_interval > 0:
+        logger.info(f"Hilog 提交最小间隔 [{submit_interval:.2f}s]")
+    else:
+        logger.info("Hilog 提交限速已关闭")
 
     if (username is None or not username.strip()):
         logger.error("无效 username")

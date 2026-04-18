@@ -108,7 +108,6 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
     # patch: 傻逼华为，妈的，为什么还要分设备的应用市场，草泥马的
     layout = await device.dump_layout_to_json()
     new_ui = await get_new_ui(device)
-    exit_btn = None
     # or global_var[device.sn].app_info_version < FUCKOFF_APPGALLERY_VERSION_CODE
     if not new_ui:
         await start_pull_apps(device, category)
@@ -118,10 +117,6 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
         while len(clicked_chunks) < len(common.FUCKOFF_SUB_CHUNKS):
             current_chunks = len(clicked_chunks)
             layout = await device.dump_layout_to_json()
-            if exit_btn is None:
-                exit_btn = utils.find_json_value_by_prev_path(
-                    layout, utils.find_json_value_as_path(layout, "BackButton")[0]
-                )["bounds"]
             for chunk in common.FUCKOFF_SUB_CHUNKS:
                 # if chunk in clicked_chunks:
                 #     continue
@@ -146,15 +141,13 @@ async def pull_chunk_in_category(device: hdc.Device, category: str):
                     break
                 retries += 1
             await device.simple_roll_down(0.5, 0.2, 0.72)
-    if exit_btn is not None:
-        await device.click_by_bounds(exit_btn, 1.75)
+        await device.go_back(wait_for=1.75)
 
 
 async def start_pull_apps(device: hdc.Device, category: Optional[str] = None):
     # logger.info('正在开始拉取应用...')
     apps = []
     new_apps = []
-    exit_btn = None
     start_time = runtime.perf_counter_ns()
     bottom_bar = await device.get_bottom_bar()
     while 1:
@@ -203,10 +196,7 @@ async def start_pull_apps(device: hdc.Device, category: Optional[str] = None):
     logger.info(
         f"[{device.tag}] {display_category}拉取应用完成, 共 [{len(apps)}] 个应用，新应用 [{len(new_apps)}] 个，耗时 [{format_count_time(elapsed_time)}] 平均 [{format_count_time(avg_apps)}/个] 新应用平均 [{format_count_time(avg_new_apps)}/个]"
     )
-    exit_btn = utils.find_json_value_by_prev_path(
-        layout, utils.find_json_value_as_path(layout, "BackButton")[0]
-    )["bounds"]
-    await device.click_by_bounds(exit_btn)
+    await device.go_back(layout)
     pulled_apps[device.sn].extend(apps)
     pull_res[device.sn].add(PullResult(total=len(apps), new=len(new_apps)))
 
@@ -225,9 +215,7 @@ async def share_app(device: hdc.Device, app_name: str):
         global_var[device.sn].app_share_btn = utils.find_json_value_by_prev_path(
             titlebar, utils.find_json_value_as_path(titlebar, "Button")[0]
         )["bounds"]
-        global_var[device.sn].app_exit_btn = utils.find_json_value_by_prev_path(
-            titlebar, utils.find_json_value_as_path(titlebar, "BackButton")[0]
-        )["bounds"]
+        global_var[device.sn].app_exit_btn = device.find_back_bounds(titlebar)
 
     share_btn = global_var[device.sn].app_share_btn
     assert share_btn is not None
@@ -245,8 +233,10 @@ async def share_app(device: hdc.Device, app_name: str):
     await anyio.sleep(0.95 + (ping * 0.05))
 
     exit_btn = global_var[device.sn].app_exit_btn
-    assert exit_btn is not None
-    await device.click_by_bounds(exit_btn)
+    if exit_btn is not None:
+        await device.click_by_bounds(exit_btn)
+    else:
+        await device.go_back(wait_for=0.75)
 
 
 async def find_app_link_in_logs(device: hdc.Device):

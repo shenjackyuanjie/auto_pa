@@ -29,5 +29,11 @@ def add_argument(parser: argparse.ArgumentParser):
     parser.add_argument("--repeated-apps", "-r", action="store_true", help="Pull Repeated Apps", default=False)
     parser.add_argument("--loop", type=int, help="Loop Pull Apps", default=1)
     parser.add_argument("--loop-wait", type=str, help="Loop Wait (00h00m00s format)", default="5m")
+    parser.add_argument(
+        "--keep-open-on-error",
+        action="store_true",
+        help="Keep AppGallery open when an error occurs",
+        default=False,
+    )
     parser.add_argument("--all-data-api", type=str)
     parser.add_argument("--all-data-api-key", type=str)

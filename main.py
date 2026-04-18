@@ -21,7 +21,13 @@ main_parser.add_argument(
 )
 
 if __name__ == "__main__":
-    args = main_parser.parse_known_args()[0]
+    argv = sys.argv[1:]
+    help_flags = {"-h", "--help"}
+    help_requested = any(arg in help_flags for arg in argv)
+    target = next((arg for arg in argv if arg in {"appgallery", "hilog"}), None)
+    bootstrap_argv = [arg for arg in argv if arg not in help_flags] if help_requested and target else argv
+
+    args = main_parser.parse_known_args(bootstrap_argv)[0]
     init_logger(not args.disable_log_file, args.verbose)
     target = args.target
     from src.logger import logger
@@ -35,7 +41,7 @@ if __name__ == "__main__":
         hilog_add_argument(main_parser)
         from core.hilog import main
 
-    args = main_parser.parse_args()
+    args = main_parser.parse_args(argv)
 
     if main is None:
         logger.error(f"Unknown target: {target}")

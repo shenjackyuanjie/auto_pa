@@ -11,3 +11,9 @@ def add_argument(
         default="",
         help="Username for submit apps",
     )
+    parser.add_argument(
+        "--submit-interval",
+        type=float,
+        default=1.0,
+        help="Minimum seconds between hilog submissions",
+    )

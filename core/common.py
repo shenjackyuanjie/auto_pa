@@ -161,6 +161,12 @@ class AppGalleryCommonDevice(metaclass=abc.ABCMeta):
     def get_bottom_bar(self):
         return self.device.get_bottom_bar()
 
+    def find_back_bounds(self, layout: Any) -> Optional[str]:
+        return self.device.find_back_bounds(layout)
+
+    async def go_back(self, layout: Any | None = None, wait_for: float = 0.75):
+        return await self.device.go_back(layout, wait_for)
+
     def get_app_info(self, package: str) -> Coroutine[Any, Any, Optional[hdc.AppInfo]]:
         return self.device.get_app_info(package)
     
@@ -248,7 +254,6 @@ class AppGalleryCommonDevice(metaclass=abc.ABCMeta):
 
     async def start_pull_apps(self):
         apps = []
-        exit_btn = None
         bottom_bar = await self.get_bottom_bar()
         while 1:
             current_apps_len = len(apps)
@@ -281,10 +286,7 @@ class AppGalleryCommonDevice(metaclass=abc.ABCMeta):
             if current_apps_len == len(apps):
                 break
             # break
-        exit_btn = utils.find_json_value_by_prev_path(
-            layout, utils.find_json_value_as_path(layout, "BackButton")[0]
-        )["bounds"]
-        await self.click_by_bounds(exit_btn)
+        await self.go_back(layout)
 
 global_var: defaultdict[str, StorageValue] = defaultdict(lambda: StorageValue())
 hilog_processes: dict[str, hdc.HilogProcess] = {}
@@ -294,6 +296,7 @@ fast_pull = False
 skip_app_categories = False
 skip_categories = []
 ping = 15
+keep_open_on_error = False
 # pulled_apps: defaultdict[str, list[str]] = defaultdict(list)
 # pull_res: defaultdict[str, PullResult] = defaultdict(lambda: PullResult())
 repeated_apps: bool = False
@@ -310,6 +313,7 @@ def parse_args(
         skip_app_categories, \
         skip_categories, \
         ping, \
+        keep_open_on_error, \
         loop
 
     skip_app_check = args.skip_apps_check
@@ -318,6 +322,7 @@ def parse_args(
     skip_app_categories = args.skip_app_categories
     skip_categories = args.skip_categories
     ping = args.ping
+    keep_open_on_error = getattr(args, "keep_open_on_error", False)
     loop = Loop(max=args.loop, loop_wait=parse_time_units(args.loop_wait))
 
 async def init(
@@ -369,15 +374,54 @@ async def start_app(device: AppGalleryCommonDevice):
     await anyio.sleep(3)
     logger.success(f"[{device.tag}] [AppGallery] 启动！")
 
+
+def _find_tab_bounds(layout: Any, *candidates: str) -> Optional[str]:
+    for candidate in candidates:
+        bounds = utils.find_clickable_bounds_by_value(layout, candidate)
+        if bounds is not None:
+            return bounds
+    return None
+
+
+def _find_category_bounds(layout: Any) -> Optional[str]:
+    return _find_tab_bounds(
+        layout,
+        "分类",
+        "Paf_Lantern_Button_Index_1",
+        "Paf_Lantern_Text_1",
+        "Paf_Lantern_Normal_Image_1",
+        "Paf_Lantern_Select_Image_1",
+    )
+
+
+async def _wait_for_bounds(
+    device: AppGalleryCommonDevice,
+    finder: Callable[[Any], Optional[str]],
+    description: str,
+    timeout: float = 4.0,
+    interval: float = 0.35,
+) -> str:
+    deadline = runtime.perf_counter() + timeout
+    while True:
+        layout = await device.dump_layout_to_json()
+        bounds = finder(layout)
+        if bounds is not None:
+            return bounds
+        if runtime.perf_counter() >= deadline:
+            break
+        await anyio.sleep(interval)
+    raise RuntimeError(f"[{device.tag}] 等待 [{description}] 超时，当前页面可能仍在切换或布局已变化")
+
 async def go_app_page(device: AppGalleryCommonDevice):
     if global_var[device.sn].tab_app_btn is None:
         index_layout = await device.dump_layout_to_json()
-        global_var[device.sn].tab_app_btn = utils.find_json_value_by_prev_path(
+        global_var[device.sn].tab_app_btn = _find_tab_bounds(
             index_layout,
-            utils.find_json_value_as_path(
-                index_layout, "BadgeImage.sys.symbol.bag_fill"
-            )[0],
-        )["bounds"]
+            "应用",
+            "BadgeImage.sys.symbol.bag_fill",
+        )
+        if global_var[device.sn].tab_app_btn is None:
+            raise RuntimeError(f"[{device.tag}] 未找到 [应用] 页签，当前前台可能不是 AppGallery")
     btn = global_var[device.sn].tab_app_btn
     assert btn is not None
     logger.debug(f"[{device.tag}] 应用按钮位置 [{btn}]")
@@ -385,25 +429,21 @@ async def go_app_page(device: AppGalleryCommonDevice):
 
 
 async def go_categories_page(device: AppGalleryCommonDevice):
-    layout = await device.dump_layout_to_json()
-    paths = utils.regex_json_value_as_path(
-        layout, re.compile("^Paf_Lantern_(?:Select_|Normal_)?Image(?:_1)?$")
-    )
-    btn = utils.find_json_value_by_prev_path(
-        layout, paths[0] if (len(paths) // 2) == 1 else paths[2]
-    )["bounds"]
+    btn = await _wait_for_bounds(device, _find_category_bounds, "分类入口")
+    logger.debug(f"[{device.tag}] 分类按钮位置 [{btn}]")
     await device.click_by_bounds(btn)
 
 
 async def go_game_page(device: AppGalleryCommonDevice):
     if global_var[device.sn].tab_game_btn is None:
         index_layout = await device.dump_layout_to_json()
-        global_var[device.sn].tab_game_btn = utils.find_json_value_by_prev_path(
+        global_var[device.sn].tab_game_btn = _find_tab_bounds(
             index_layout,
-            utils.find_json_value_as_path(
-                index_layout, "BadgeImage.sys.symbol.game_fill"
-            )[0],
-        )["bounds"]
+            "游戏",
+            "BadgeImage.sys.symbol.game_fill",
+        )
+        if global_var[device.sn].tab_game_btn is None:
+            raise RuntimeError(f"[{device.tag}] 未找到 [游戏] 页签，当前前台可能不是 AppGallery")
     btn = global_var[device.sn].tab_game_btn
     assert btn is not None
     logger.debug(f"[{device.tag}] 游戏按钮位置 [{btn}]")
@@ -424,12 +464,17 @@ def device_main(device_class: Type[AppGalleryCommonDevice]):
                 global_var[device.sn].app_info_version = app_gallery_info.version_code
             wrapper_device = device_class(device)
             start_time = runtime.perf_counter_ns()
+            failed = False
             try:
                 await func(wrapper_device)
             except Exception:
+                failed = True
                 logger.traceback(f"[{device.tag}] 发生错误")
             finally:
-                await device.close_app(APPGALLERY_PKG)
+                if failed and keep_open_on_error:
+                    logger.info(f"[{device.tag}] 调试模式已开启，保留 [AppGallery] 现场")
+                else:
+                    await device.close_app(APPGALLERY_PKG)
             end_time = runtime.perf_counter_ns()
             logger.success(
                 f"[{device.tag}] 耗时 [{format_count_time(end_time - start_time)}] 共 [{wrapper_device.total_pull_res.total}] 个应用，新增 [{wrapper_device.total_pull_res.new}] 个应用"

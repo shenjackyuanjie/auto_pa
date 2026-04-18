@@ -225,6 +225,91 @@ class Device:
         main_screen = self.main_screen
         await self.roll_to_y(x_scale, y_scale, main_screen[1] * roll_scale, wait_for)
 
+    def _get_layout_attributes(self, node: Any) -> dict[str, Any]:
+        if not isinstance(node, dict):
+            return {}
+        attrs = node.get("attributes")
+        if isinstance(attrs, dict):
+            return attrs
+        return node
+
+    def _iter_layout_nodes(self, node: Any):
+        if isinstance(node, dict):
+            yield node
+            children = node.get("children")
+            if isinstance(children, list):
+                for child in children:
+                    yield from self._iter_layout_nodes(child)
+        elif isinstance(node, list):
+            for item in node:
+                yield from self._iter_layout_nodes(item)
+
+    def _find_titlebar_back_bounds(self, layout: Any) -> Optional[str]:
+        titlebar_nodes: list[tuple[tuple[int, int, int, int], Any]] = []
+        for node in self._iter_layout_nodes(layout):
+            attrs = self._get_layout_attributes(node)
+            if attrs.get("type") not in {"TitleBar", "HdsTitleBar"}:
+                continue
+            bounds = attrs.get("bounds")
+            if not isinstance(bounds, str):
+                continue
+            titlebar_nodes.append((utils.parse_bounds(bounds), node))
+
+        for (x1, y1, x2, y2), titlebar in titlebar_nodes:
+            width = x2 - x1
+            vertical_slop = max(120, y2 - y1)
+            left_candidates: list[tuple[float, int, str]] = []
+            for node in self._iter_layout_nodes(titlebar):
+                attrs = self._get_layout_attributes(node)
+                if attrs.get("clickable") != "true":
+                    continue
+                bounds = attrs.get("bounds")
+                if not isinstance(bounds, str):
+                    continue
+                bx1, by1, bx2, by2 = utils.parse_bounds(bounds)
+                center_x = (bx1 + bx2) / 2
+                center_y = (by1 + by2) / 2
+                if not (x1 <= center_x <= x2 and y1 <= center_y <= y2 + vertical_slop):
+                    continue
+                if center_x > x1 + width * 0.33:
+                    continue
+                left_candidates.append((center_x, bx2 - bx1, bounds))
+
+            if left_candidates:
+                left_candidates.sort(key=lambda item: (item[0], item[1]))
+                return left_candidates[0][2]
+
+        return None
+
+    def find_back_bounds(self, layout: Any) -> Optional[str]:
+        if not isinstance(layout, (dict, list)):
+            return None
+        back_bounds = utils.find_clickable_bounds_by_value(layout, "BackButton")
+        if back_bounds is not None:
+            return back_bounds
+        back_paths = utils.find_json_value_as_path(layout, "BackButton")
+        if back_paths:
+            back_node = utils.find_json_value_by_prev_path(layout, back_paths[0])
+            back_attrs = self._get_layout_attributes(back_node)
+            bounds = back_attrs.get("bounds")
+            if isinstance(bounds, str):
+                return bounds
+        return self._find_titlebar_back_bounds(layout)
+
+    async def go_back(self, layout: Any | None = None, wait_for: float = 0.75):
+        if layout is None:
+            layout = await self.dump_layout_to_json()
+
+        back_bounds = self.find_back_bounds(layout)
+        if back_bounds is not None:
+            await self.click_by_bounds(back_bounds, wait_for)
+            return
+
+        # AppGallery 改布局时经常先把返回控件名字改掉，这里退回系统返回手势兜底。
+        logger.debug(f"[{self.tag}] 未找到布局返回按钮，使用系统返回手势")
+        await self.drag_to_back()
+        await anyio.sleep(wait_for)
+
     async def drag_to_back(
         self,
     ):

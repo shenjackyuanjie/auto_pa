@@ -105,6 +105,31 @@ def list_json_value_by_prev_paths(
     return [find_json_value_by_prev_path(data, p, deep=deep) for p in path]
 
 
+def _get_node_attributes(node: Any) -> dict[str, Any]:
+    if not isinstance(node, dict):
+        return {}
+    if "bounds" in node or "clickable" in node:
+        return node
+    attrs = node.get("attributes")
+    return attrs if isinstance(attrs, dict) else {}
+
+
+def find_clickable_bounds_by_value(data: Any, value: re.Pattern | Any) -> str | None:
+    for path in regex_json_value_as_path(data, value):
+        for deep in range(1, len(path) + 1):
+            node = find_json_value_by_prev_path(data, path, deep)
+            attrs = _get_node_attributes(node)
+            if not attrs:
+                continue
+            bounds = attrs.get("bounds")
+            # HarmonyOS dumpLayout often nests the clickable container several levels
+            # above the matched label or icon, and some reads return the attributes
+            # dict directly while others return the wrapping node.
+            if attrs.get("clickable") == "true" and isinstance(bounds, str):
+                return bounds
+    return None
+
+
 def parse_bounds(bounds: str) -> tuple[int, int, int, int]:
     """
     解析 bounds 字符串，例如：`[0,0][1080,1920]`，返回 (x1, y1, x2, y2)
