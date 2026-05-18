@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "crates/hdc_api",
+    "crates/main"
+]
+resolver = "3"
