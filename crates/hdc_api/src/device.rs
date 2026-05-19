@@ -4,7 +4,11 @@ use anyhow::Result;
 use serde_json::Value;
 use tracing::event;
 
-use crate::{exec, model::Vector, shell_device};
+use crate::{
+    exec,
+    model::{Layout, Vector},
+    shell_device,
+};
 
 const DEVICE_INFO_QUERY_SHELL: &str = "param get const.product.devicetype; param get const.product.model; param get const.product.name; echo '\t\t'; SP_daemon -deviceinfo";
 
@@ -120,6 +124,12 @@ impl Device {
 
         std::fs::write(file, pretty_json)?;
         Ok(())
+    }
+
+    pub async fn dump_layout_to_json(&self) -> Result<Layout> {
+        let res = self.dump_layout_to_text().await?;
+        let layout = serde_json::from_str::<Layout>(&res)?;
+        Ok(layout)
     }
 }
 

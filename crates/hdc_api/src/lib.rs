@@ -6,6 +6,7 @@ use anyhow::Result;
 use tracing::event;
 pub mod device;
 pub mod model;
+pub mod utils;
 
 static HDC_EXECUTEABLE: OnceLock<PathBuf> = OnceLock::new();
 
