@@ -197,6 +197,20 @@ class Device:
         await self.click_pos((bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2)
         await anyio.sleep(wait_for)
 
+    async def input_text_by_bounds(
+        self, bounds: tuple[float, float, float, float] | str, text: str
+    ):
+        if not text:
+            raise ValueError("input text cannot be empty")
+        bounds = utils.parse_bounds(bounds) if isinstance(bounds, str) else bounds
+        x = int((bounds[0] + bounds[2]) / 2)
+        y = int((bounds[1] + bounds[3]) / 2)
+        result = (
+            await self.shell("uitest", "uiInput", "inputText", str(x), str(y), text)
+        ).strip()
+        if result and "No Error" not in result:
+            raise RuntimeError(f"uitest inputText failed: {result}")
+
     async def roll_to_y(
         self,
         x_scale: float,

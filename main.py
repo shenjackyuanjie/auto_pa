@@ -16,6 +16,12 @@ main_parser.add_argument(
     "--disable-log-file", "-Dl", action="store_true", help="disable log file", default=False
 )
 main_parser.add_argument(
+    "--no-submit",
+    action="store_true",
+    help="only run UI operations; skip submit and hilog capture",
+    default=False,
+)
+main_parser.add_argument(
     'target',
     choices=['appgallery', 'hilog']
 )
@@ -33,15 +39,18 @@ if __name__ == "__main__":
     from src.logger import logger
     logger.info(f"Starting [{target}]...")
     logger.info(f"Python version: [{sys.version}]")
-    main = None
     if target == 'appgallery':
         appgallery_add_argument(main_parser)
-        from core.appgallery import main
     elif target == 'hilog':
         hilog_add_argument(main_parser)
-        from core.hilog import main
 
     args = main_parser.parse_args(argv)
+
+    main = None
+    if target == 'appgallery':
+        from core.appgallery import main
+    elif target == 'hilog':
+        from core.hilog import main
 
     if main is None:
         logger.error(f"Unknown target: {target}")

@@ -14,6 +14,8 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
         super().__init__(device)
 
     async def custom_pull_apps(self, btn_pos: str, category: str) -> common.PullResult:
+        layout = None
+
         async def pull_chunk_in_categories():
             nonlocal layout
             clicked_chunks: set[str] = set()
@@ -71,6 +73,7 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
                         logger.debug(f"[{self.tag}] 跳过底部按钮 [{text}]")
                         continue
                     apps.append(text)
+                    ui_apps.add(text)
                     cur_apps.append(text)
                     apps_pos[text] = app_pos
                     logger.debug(f"[{self.tag}] [{text}] [{app_pos}]")
@@ -84,6 +87,7 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
                 await self.go_back(layout)
 
         pulled_apps: set[str] = set()
+        ui_apps: set[str] = set()
         new_apps: set[str] = set()
         submit_send, submit_recv = anyio.create_memory_object_stream(512)
 
@@ -136,13 +140,8 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
             
             
         start_time = runtime.perf_counter_ns()
-        async with hdc.HilogProcess(
-            self.device_id,
-            "-e", "GetSpecifiedDistributionType"
-        ) as appgallery_hilog, anyio.create_task_group() as tg:
-            tg.start_soon(poll_appgallery)
-            tg.start_soon(submit_pending_apps)
-            
+
+        async def run_ui_operations():
             await self.click_by_bounds(btn_pos)
             await anyio.sleep(0.15)
 
@@ -153,20 +152,34 @@ class AppGalleryHilogDevice(common.AppGalleryCommonDevice):
             else:
                 await pull_chunk_in_categories()
 
-            await appgallery_hilog.exit()
+        if common.no_submit:
+            logger.info(f"[{self.tag}] No Submit 模式：跳过 hilog 抓取和应用提交")
+            await run_ui_operations()
+        else:
+            async with hdc.HilogProcess(
+                self.device_id,
+                "-e", "GetSpecifiedDistributionType"
+            ) as appgallery_hilog, anyio.create_task_group() as tg:
+                tg.start_soon(poll_appgallery)
+                tg.start_soon(submit_pending_apps)
+
+                await run_ui_operations()
+
+                await appgallery_hilog.exit()
 
         end_time = runtime.perf_counter_ns()
         elapsed_time = end_time - start_time
-        avg_apps = elapsed_time / len(pulled_apps) if len(pulled_apps) > 0 else 0
+        total_apps = len(ui_apps) if common.no_submit else len(pulled_apps)
+        avg_apps = elapsed_time / total_apps if total_apps > 0 else 0
         avg_new_apps = elapsed_time / len(new_apps) if len(new_apps) > 0 else 0
         display_category = f"[{category}] " if category else ""
         logger.info(
-            f"[{self.tag}] {display_category}拉取应用完成, 共 [{len(pulled_apps)}] 个应用，新应用 [{len(new_apps)}] 个，耗时 [{format_count_time(elapsed_time)}] 平均 [{format_count_time(avg_apps)}/个] 新应用平均 [{format_count_time(avg_new_apps)}/个]"
+            f"[{self.tag}] {display_category}拉取应用完成, 共 [{total_apps}] 个应用，新应用 [{len(new_apps)}] 个，耗时 [{format_count_time(elapsed_time)}] 平均 [{format_count_time(avg_apps)}/个] 新应用平均 [{format_count_time(avg_new_apps)}/个]"
         )
         await self.go_back(wait_for=1.75)
 
         return common.PullResult(
-            total=len(pulled_apps),
+            total=total_apps,
             new=len(new_apps)
         )
 
@@ -205,14 +218,18 @@ async def main(args):
     submit_interval = max(raw_submit_interval, 0.0)
     
     logger.info(f"App Gallery API [{common.gallery_base_url}]")
+    if common.no_submit:
+        logger.info("No Submit 模式：仅执行 UI 操作，不抓取 hilog，不提交应用")
     if common.skip_app_check:
         logger.info("跳过应用检查")
-    if submit_interval > 0:
+    if common.no_submit:
+        pass
+    elif submit_interval > 0:
         logger.info(f"Hilog 提交最小间隔 [{submit_interval:.2f}s]")
     else:
         logger.info("Hilog 提交限速已关闭")
 
-    if (username is None or not username.strip()):
+    if not common.no_submit and (username is None or not username.strip()):
         logger.error("无效 username")
         return
 

@@ -47,6 +47,43 @@ APPGALLERY_PKG = "com.huawei.hmsapp.appgallery"
 APPGALLERY_ABILITY = "MainAbility"
 FUCKOFF_APPGALLERY_VERSION_CODE: int = 1460801300
 FUCKOFF_SUB_CHUNKS = [re.compile("新鲜(应用|游戏)"), re.compile("时下畅销(应用|游戏)")]
+CATEGORY_PAGE_TABS = frozenset({"精选", "分类", "排行榜", "重磅更新"})
+CATEGORY_PAGE_ACTIONS = frozenset({"安装", "打开", "更新"})
+
+
+def _category_list_score(layout: Any) -> int:
+    category_names: set[str] = set()
+    for btn_path in utils.find_json_value_as_path(layout, "Button"):
+        try:
+            button = utils.find_json_value_by_prev_path(layout, btn_path, 2)
+            text_path = utils.find_json_value_as_path(button, "Text")[0]
+            text_node = utils.find_json_value_by_prev_path(button, text_path)
+            text = text_node["text"]
+        except (IndexError, KeyError, TypeError):
+            continue
+        if (
+            isinstance(text, str)
+            and text
+            and text not in CATEGORY_PAGE_TABS
+            and text not in CATEGORY_PAGE_ACTIONS
+        ):
+            category_names.add(text)
+    return len(category_names)
+
+
+def find_categories_list(layout: Any) -> Any:
+    candidates: list[tuple[int, int, Any]] = []
+    for index, list_path in enumerate(utils.find_json_value_as_path(layout, "List")):
+        list_layout = utils.find_json_value_by_prev_path(layout, list_path, 2)
+        candidates.append((_category_list_score(list_layout), index, list_layout))
+
+    if not candidates:
+        raise RuntimeError("当前页面未找到 List 控件")
+
+    score, _, categories_list = max(candidates, key=lambda item: (item[0], item[1]))
+    if score == 0:
+        raise RuntimeError("当前页面未找到有效分类列表")
+    return categories_list
 
 class AppGalleryCommonDevice(metaclass=abc.ABCMeta):
     def __init__(self, device: hdc.Device):
@@ -185,15 +222,11 @@ class AppGalleryCommonDevice(metaclass=abc.ABCMeta):
 
     async def pull_categories(self):
         pulled_categories = []
-        # idx = 1 if global_var[device.sn].phone else 2
-        idx = -1 if global_var[self.sn].phone else 2
         while 1:
             current_categories_len = len(pulled_categories)
 
             layout = await self.dump_layout_to_json()
-            layout = utils.find_json_value_by_prev_path(
-                layout, utils.find_json_value_as_path(layout, "List")[idx], 2
-            )
+            layout = find_categories_list(layout)
             # and then fuck to find btn
             btns = utils.find_json_value_as_path(layout, "Button")
             for btn_path in btns:
@@ -210,6 +243,13 @@ class AppGalleryCommonDevice(metaclass=abc.ABCMeta):
                     continue
                 pulled_categories.append(text)
                 logger.debug(f"[{self.tag}] [{text}] [{btn_pos}]")
+
+                # The current tablet UI puts the page tabs in the
+                # same List as the real category buttons. They are navigation controls,
+                # not categories to open and crawl.
+                if text in CATEGORY_PAGE_TABS:
+                    logger.debug(f"[{self.tag}] 跳过分类页导航 [{text}]")
+                    continue
 
                 if text in skip_categories:
                     continue
@@ -297,6 +337,7 @@ skip_app_categories = False
 skip_categories = []
 ping = 15
 keep_open_on_error = False
+no_submit = False
 # pulled_apps: defaultdict[str, list[str]] = defaultdict(list)
 # pull_res: defaultdict[str, PullResult] = defaultdict(lambda: PullResult())
 repeated_apps: bool = False
@@ -314,6 +355,7 @@ def parse_args(
         skip_categories, \
         ping, \
         keep_open_on_error, \
+        no_submit, \
         loop
 
     skip_app_check = args.skip_apps_check
@@ -323,12 +365,17 @@ def parse_args(
     skip_categories = args.skip_categories
     ping = args.ping
     keep_open_on_error = getattr(args, "keep_open_on_error", False)
+    no_submit = getattr(args, "no_submit", False)
     loop = Loop(max=args.loop, loop_wait=parse_time_units(args.loop_wait))
 
 async def init(
     args: argparse.Namespace
 ):
     parse_args(args)
+
+    if no_submit:
+        logger.info("No Submit 模式已开启，跳过 Gallery API 初始化")
+        return
 
     all_data_api = args.all_data_api
     all_data_api_key = args.all_data_api_key
