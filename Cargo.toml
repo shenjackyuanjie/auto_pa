@@ -1,0 +1,25 @@
+[package]
+name = "auto-pa-rs"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "AppGallery UI search automation"
+
+[[bin]]
+name = "auto-pa-search"
+path = "rust/main.rs"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+hm_driver_rs = {
+    git = "https://github.com/shenjackyuanjie/hm_driver_rs.git",
+    rev = "2b3d7f74a53ea415f2e5ef49c5d8aeb41eb80093"
+}
+rand = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
