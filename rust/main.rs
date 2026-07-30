@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use clap::Parser;
 use hm_driver_rs::{
     AppIdentifier, Bounds, DeviceSelector, DeviceSerial, DeviceStatus, HdcConfig, HmDriver,
-    MatchPattern, Selector, SwipeArea, SwipeDirection, UiNode,
+    KeyCode, SwipeArea, SwipeDirection, UiNode,
 };
 use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
@@ -697,9 +697,13 @@ impl SearchFlow {
             .await?;
         search_field.click().await?;
         sleep(SEARCH_INPUT_FOCUS_SETTLE).await;
-        search_field.clear_text().await?;
         search_field.input_text(app_name).await?;
         sleep(SEARCH_INPUT_SETTLE).await;
+        if is_english_query(app_name) {
+            debug!(app = %app_name, "英文查询输入完成，收起输入法");
+            self.driver.press_key_code(KeyCode::Enter).await?;
+            sleep(SEARCH_CLICK_SETTLE).await;
+        }
 
         let search_button = self
             .wait_for_key_element(SEARCH_BUTTON_KEY_PREFIX, Duration::from_secs(5))
@@ -746,10 +750,10 @@ impl SearchFlow {
         &self,
         key_prefix: &str,
         timeout: Duration,
-    ) -> Result<hm_driver_rs::Element> {
-        let selector = Selector::new().key(MatchPattern::StartsWith(key_prefix.to_owned()));
+    ) -> Result<hm_driver_rs::XPathElement> {
+        let expression = format!("//*[starts-with(@key, \"{key_prefix}\")]");
         self.driver
-            .wait_for(&selector, timeout)
+            .wait_for_xpath(&expression, timeout)
             .await
             .with_context(|| format!("等待控件 [{}] 超时", key_prefix))
     }
@@ -897,6 +901,13 @@ fn sanitize_serial(serial: &str) -> String {
     } else {
         safe
     }
+}
+
+fn is_english_query(value: &str) -> bool {
+    value
+        .chars()
+        .any(|character| character.is_ascii_alphabetic())
+        && value.chars().all(|character| character.is_ascii())
 }
 
 fn foreground_bundle_present(output: &str, bundle: &str) -> bool {
@@ -1097,6 +1108,14 @@ mod tests {
     fn serial_path_sanitization_matches_python_shape() {
         assert_eq!(sanitize_serial("a:b/._"), "a_b");
         assert_eq!(sanitize_serial("...___"), "device");
+    }
+
+    #[test]
+    fn english_query_detection_matches_keyboard_workaround() {
+        assert!(is_english_query("Facebook Lite 2.0"));
+        assert!(!is_english_query("微信"));
+        assert!(!is_english_query("Facebook 微信"));
+        assert!(!is_english_query("12345"));
     }
 
     #[test]
