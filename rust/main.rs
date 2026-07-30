@@ -35,6 +35,7 @@ const APP_START_SETTLE: Duration = Duration::from_secs(3);
 const PAGE_CLICK_SETTLE: Duration = Duration::from_millis(750);
 const CATEGORY_CLICK_SETTLE: Duration = Duration::from_secs(1);
 const CATEGORY_SCROLL_SETTLE: Duration = Duration::from_millis(850);
+const CATEGORY_CONTENT_TIMEOUT: Duration = Duration::from_secs(5);
 const BACK_SETTLE: Duration = Duration::from_millis(1500);
 const SEARCH_INPUT_FOCUS_SETTLE: Duration = Duration::from_millis(200);
 const SEARCH_INPUT_SETTLE: Duration = Duration::from_millis(300);
@@ -423,11 +424,23 @@ impl SearchFlow {
         sleep(CATEGORY_CLICK_SETTLE).await;
 
         if self.random_mode {
-            let initial = self.driver.ui_tree().await?;
+            let initial = self
+                .driver
+                .wait_for_ui(CATEGORY_CONTENT_TIMEOUT, |tree| {
+                    tree.find(|node| node.attribute("text").as_deref() == Some(FRESH_APPS_TEXT))
+                        .is_some()
+                })
+                .await
+                .with_context(|| {
+                    format!(
+                        "进入分类 [{}] 后等待 [{}] 入口超时",
+                        button.name, FRESH_APPS_TEXT
+                    )
+                })?;
             self.click_fresh_apps(initial).await?;
             let app_layout = self
                 .driver
-                .wait_for_ui(Duration::from_secs(12), |tree| {
+                .wait_for_ui(CATEGORY_CONTENT_TIMEOUT, |tree| {
                     !app_snapshot(tree).is_empty()
                 })
                 .await
@@ -438,7 +451,7 @@ impl SearchFlow {
             self.back_to_categories(2).await?;
             self.save_collected_names(&button.name, names)?;
         } else {
-            let current = self.driver.ui_tree().await?;
+            let current = self.wait_for_category_app_list(&button.name).await?;
             let names = self
                 .collect_category_app_list(current, &button.name)
                 .await?;
@@ -446,6 +459,21 @@ impl SearchFlow {
             self.save_collected_names(&button.name, names)?;
         }
         Ok(())
+    }
+
+    async fn wait_for_category_app_list(&self, category: &str) -> Result<UiNode> {
+        debug!(
+            device = %self.device_label,
+            category,
+            timeout = ?CATEGORY_CONTENT_TIMEOUT,
+            "等待分类应用列表"
+        );
+        self.driver
+            .wait_for_ui(CATEGORY_CONTENT_TIMEOUT, |tree| {
+                !app_snapshot(tree).is_empty()
+            })
+            .await
+            .with_context(|| format!("分类 [{}] 等待应用列表超时", category))
     }
 
     async fn click_fresh_apps(&self, initial: UiNode) -> Result<()> {
@@ -550,7 +578,7 @@ impl SearchFlow {
             if page < 2 {
                 self.scroll_up().await?;
                 sleep(CATEGORY_SCROLL_SETTLE).await;
-                tree = self.driver.ui_tree().await?;
+                tree = self.wait_for_category_app_list(category).await?;
             }
         }
         Ok(names)
@@ -915,9 +943,31 @@ async fn run_device(index: usize, serial: String, hdc_config: HdcConfig, cli: Cl
     let cleanup_result = flow.shutdown().await;
     match (run_result, cleanup_result) {
         (Ok(()), Ok(())) => Ok(()),
-        (Err(error), Ok(())) => Err(error),
-        (Ok(()), Err(error)) => Err(error),
-        (Err(error), Err(cleanup)) => Err(error.context(format!("同时清理失败：{cleanup}"))),
+        (Err(error), Ok(())) => {
+            error!(
+                device = %device_label,
+                error = ?error,
+                "设备执行失败"
+            );
+            Err(error)
+        }
+        (Ok(()), Err(error)) => {
+            error!(
+                device = %device_label,
+                error = ?error,
+                "设备清理失败"
+            );
+            Err(error)
+        }
+        (Err(error), Err(cleanup)) => {
+            error!(
+                device = %device_label,
+                error = ?error,
+                cleanup = ?cleanup,
+                "设备执行和清理均失败"
+            );
+            Err(error.context(format!("同时清理失败：{cleanup}")))
+        }
     }
 }
 
