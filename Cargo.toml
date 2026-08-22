@@ -5,10 +5,6 @@ edition = "2024"
 publish = false
 description = "AppGallery UI search automation"
 
-[[bin]]
-name = "auto-pa-search"
-path = "rust/main.rs"
-
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
