@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import sys
 
-from src.logger import init_logger
+from py.src.logger import init_logger
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,8 +34,8 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = parse_args()
     init_logger(not args.disable_log_file, args.verbose)
-    from src.logger import logger
-    from core.search import main
+    from py.src.logger import logger
+    from py.core.search import main
 
     logger.info("Starting [search]...")
     logger.info(f"Python version: [{sys.version}]")

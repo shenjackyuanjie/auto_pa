@@ -8,8 +8,8 @@ from typing import Any, Callable, Coroutine, Optional, Type
 import anyio
 from tianxiu2b2t.units import parse_time_units
 
-from src.logger import logger
-from src import hmgallery as gallery, hdc, utils
+from py.src.logger import logger
+from py.src import hmgallery as gallery, hdc, utils
 from tianxiu2b2t.utils import runtime
 from tianxiu2b2t.units import format_count_time
 

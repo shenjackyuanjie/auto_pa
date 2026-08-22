@@ -3,8 +3,8 @@ import asyncio
 import sys
 from graceful_shutdown import ShutdownProtection
 
-from src.logger import init_logger
-from core import appgallery_add_argument, hilog_add_argument
+from py.src.logger import init_logger
+from py.core import appgallery_add_argument, hilog_add_argument
 
 main_parser = argparse.ArgumentParser()
 # verbose
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     args = main_parser.parse_known_args(bootstrap_argv)[0]
     init_logger(not args.disable_log_file, args.verbose)
     target = args.target
-    from src.logger import logger
+    from py.src.logger import logger
     logger.info(f"Starting [{target}]...")
     logger.info(f"Python version: [{sys.version}]")
     if target == 'appgallery':
@@ -48,9 +48,9 @@ if __name__ == "__main__":
 
     main = None
     if target == 'appgallery':
-        from core.appgallery import main
+        from py.core.appgallery import main
     elif target == 'hilog':
-        from core.hilog import main
+        from py.core.hilog import main
 
     if main is None:
         logger.error(f"Unknown target: {target}")

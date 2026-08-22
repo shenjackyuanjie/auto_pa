@@ -4,12 +4,12 @@ import datetime
 import re
 from typing import Optional
 import anyio
-from src import hdc, utils, hmgallery as gallery
-from src.logger import logger
+from py.src import hdc, utils, hmgallery as gallery
+from py.src.logger import logger
 from tianxiu2b2t.utils import runtime
 from tianxiu2b2t.units import format_count_time, parse_time_units
 from .common import go_categories_page, go_app_page, go_game_page
-from core import common
+from py.core import common
 
 class AppGalleryGalleryDevice(common.AppGalleryCommonDevice):
     def __init__(self, device: hdc.Device):

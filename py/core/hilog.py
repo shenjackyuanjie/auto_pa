@@ -1,7 +1,7 @@
 import anyio
-from src.logger import logger
-from src import hmgallery as gallery, hdc, utils
-from core import common
+from py.src.logger import logger
+from py.src import hmgallery as gallery, hdc, utils
+from py.core import common
 from tianxiu2b2t.utils import runtime
 from tianxiu2b2t.units import format_count_time
 from graceful_shutdown import ShutdownProtection

@@ -9,9 +9,9 @@ from typing import Any, Callable, Optional
 
 import anyio
 
-from core import common
-from src import hdc, utils
-from src.logger import logger
+from py.core import common
+from py.src import hdc, utils
+from py.src.logger import logger
 
 
 STATE_VERSION = 1

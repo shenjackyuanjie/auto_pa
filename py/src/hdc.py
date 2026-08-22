@@ -9,7 +9,7 @@ import anyio
 from .logger import logger
 from tianxiu2b2t.anyio.concurrency import gather
 from tianxiu2b2t.utils import runtime
-from src import utils
+from py.src import utils
 from graceful_shutdown import ShutdownProtection
 
 hdc_path = os.environ.get("HDC_PATH", "hdc.exe")
