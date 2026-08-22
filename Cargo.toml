@@ -7,15 +7,17 @@ description = "AppGallery UI search automation"
 
 [dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
 hm_driver_rs = {
     git = "https://github.com/shenjackyuanjie/hm_driver_rs.git",
-    rev = "2b3d7f74a53ea415f2e5ef49c5d8aeb41eb80093"
+    rev = "ff53f86c45174721d35b25a91c3beac4cdcc00cf",
+    default-features = false,
+    features = ["embedded-agents"]
 }
-rand = "0.9"
+rand = "0.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 tracing = "0.1"
 tracing-appender = "0.2"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
