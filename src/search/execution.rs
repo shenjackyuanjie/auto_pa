@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use hm_driver_rs::{KeyCode, UiNode, XPathElement};
+use hm_driver_rs::{Element, KeyCode, MatchPattern, Selector};
 use rand::seq::SliceRandom;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -124,7 +124,7 @@ impl SearchFlow {
             .await?;
         let result_count = match self
             .driver
-            .wait_for_ui(Duration::from_secs(6), |tree| {
+            .wait_for_ui_tree(Duration::from_secs(6), |tree| {
                 !app_snapshot(tree).is_empty()
             })
             .await
@@ -150,14 +150,10 @@ impl SearchFlow {
         Ok(result_count)
     }
 
-    async fn wait_for_key_element(
-        &self,
-        key_prefix: &str,
-        timeout: Duration,
-    ) -> Result<XPathElement> {
-        let expression = format!("//*[starts-with(@key, \"{key_prefix}\")]");
+    async fn wait_for_key_element(&self, key_prefix: &str, timeout: Duration) -> Result<Element> {
+        let selector = Selector::new().key(MatchPattern::StartsWith(key_prefix.to_owned()));
         self.driver
-            .wait_for_xpath(&expression, timeout)
+            .wait_for(&selector, timeout)
             .await
             .with_context(|| format!("等待控件 [{}] 超时", key_prefix))
     }
@@ -167,27 +163,20 @@ impl SearchFlow {
         key: &str,
         timeout: Duration,
         description: &str,
-    ) -> Result<UiNode> {
+    ) -> Result<Element> {
+        let selector = Selector::new().key(key);
         self.driver
-            .wait_for_ui(timeout, move |node| {
-                node.attribute("key").as_deref() == Some(key)
-            })
+            .wait_for(&selector, timeout)
             .await
             .with_context(|| format!("等待 [{}] 超时", description))
     }
 
-    async fn click_local_key(
-        &self,
-        key: &str,
-        timeout: Duration,
-        description: &str,
-    ) -> Result<UiNode> {
-        self.click_local(
-            move |node| node.attribute("key").as_deref() == Some(key),
-            description,
-            timeout,
-        )
-        .await
+    async fn click_local_key(&self, key: &str, timeout: Duration, description: &str) -> Result<()> {
+        self.wait_local_key(key, timeout, description)
+            .await?
+            .click()
+            .await?;
+        Ok(())
     }
 }
 
@@ -195,7 +184,7 @@ fn is_english_query(value: &str) -> bool {
     value
         .chars()
         .any(|character| character.is_ascii_alphabetic())
-        && value.chars().all(|character| character.is_ascii())
+        && value.is_ascii()
 }
 
 #[cfg(test)]

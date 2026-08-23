@@ -7,7 +7,6 @@ use tracing::{info, warn};
 
 use crate::appgallery::{
     APPGALLERY_ABILITY, APPGALLERY_BUNDLE, CategoryButton, app_snapshot, category_buttons,
-    foreground_bundle_present,
 };
 
 const MAX_SCROLLS: usize = 100;
@@ -99,21 +98,10 @@ impl UiTraversal {
     }
 
     async fn wait_for_appgallery(&self, timeout: Duration) -> Result<bool> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let output = self
-                .driver
-                .raw_shell("aa dump -l")
-                .await
-                .context("查询 AppGallery 前台状态失败")?;
-            if foreground_bundle_present(&output.stdout, self.bundle.as_str()) {
-                return Ok(true);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Ok(false);
-            }
-            sleep(Duration::from_millis(250)).await;
-        }
+        self.driver
+            .wait_for_app(&self.bundle, timeout)
+            .await
+            .context("查询 AppGallery 前台状态失败")
     }
 
     async fn traverse_page(&mut self, page: &str) -> Result<()> {
@@ -133,8 +121,8 @@ impl UiTraversal {
         };
         self.click_local(
             move |node| {
-                node.attribute("text").as_deref() == Some(page)
-                    || key.is_some_and(|key| node.attribute("key").as_deref() == Some(key))
+                node.attribute_str("text") == Some(page)
+                    || key.is_some_and(|key| node.attribute_str("key") == Some(key))
             },
             &format!("{page}页签"),
             Duration::from_secs(12),
@@ -147,11 +135,11 @@ impl UiTraversal {
     async fn click_categories_tab(&self) -> Result<()> {
         self.click_local(
             |node| {
-                let text = node.attribute("text");
-                let key = node.attribute("key");
-                text.as_deref() == Some("分类")
+                let text = node.attribute_str("text");
+                let key = node.attribute_str("key");
+                text == Some("分类")
                     || matches!(
-                        key.as_deref(),
+                        key,
                         Some(
                             "Paf_Lantern_Button_Index_1"
                                 | "Paf_Lantern_Text_1"
@@ -311,14 +299,14 @@ impl UiTraversal {
 
     async fn wait_for_categories(&self, timeout: Duration) -> Result<UiNode> {
         self.driver
-            .wait_for_ui(timeout, |tree| !category_buttons(tree).is_empty())
+            .wait_for_ui_tree(timeout, |tree| !category_buttons(tree).is_empty())
             .await
             .context("等待分类列表超时")
     }
 
     async fn wait_for_category_content(&self, timeout: Duration) -> Result<UiNode> {
         self.driver
-            .wait_for_ui(timeout, |tree| {
+            .wait_for_ui_tree(timeout, |tree| {
                 !subcategory_buttons(tree).is_empty() || !app_snapshot(tree).is_empty()
             })
             .await
@@ -327,7 +315,7 @@ impl UiTraversal {
 
     async fn wait_for_app_list(&self, timeout: Duration, category: &str) -> Result<UiNode> {
         self.driver
-            .wait_for_ui(timeout, |tree| !app_snapshot(tree).is_empty())
+            .wait_for_ui_tree(timeout, |tree| !app_snapshot(tree).is_empty())
             .await
             .with_context(|| format!("分类 [{category}] 等待应用列表超时"))
     }
@@ -343,11 +331,14 @@ impl UiTraversal {
     where
         F: Fn(&UiNode) -> bool,
     {
-        let node = self
+        let tree = self
             .driver
-            .wait_for_ui(timeout, predicate)
+            .wait_for_ui_tree(timeout, |tree| tree.find(&predicate).is_some())
             .await
             .with_context(|| format!("等待 [{description}] 超时"))?;
+        let node = tree
+            .find_click_target(&predicate)
+            .ok_or_else(|| anyhow!("控件 [{description}] 没有有效点击目标"))?;
         let bounds = node
             .bounds()
             .ok_or_else(|| anyhow!("控件 [{description}] 没有有效 bounds"))?;
@@ -357,35 +348,19 @@ impl UiTraversal {
 }
 
 fn subcategory_buttons(tree: &UiNode) -> Vec<CategoryButton> {
-    let mut buttons = Vec::new();
-    let mut names = HashSet::new();
-    for button in tree.find_all(|node| node.node_type().as_deref() == Some("Button")) {
-        let Some(text_node) = button.find(|node| {
-            node.attribute("text")
-                .is_some_and(|text| is_subcategory_name(&text))
-        }) else {
-            continue;
-        };
-        let Some(name) = text_node.attribute("text") else {
-            continue;
-        };
-        if !names.insert(name.clone()) {
-            continue;
-        }
-        let Some(bounds) = button.bounds().or_else(|| text_node.bounds()) else {
-            continue;
-        };
-        buttons.push(CategoryButton { name, bounds });
-    }
-    buttons
+    SUBCATEGORY_NAMES
+        .iter()
+        .filter_map(|&name| {
+            let target = tree.find_click_target(|node| node.attribute_str("text") == Some(name))?;
+            Some(CategoryButton {
+                name: name.to_owned(),
+                bounds: target.bounds()?,
+            })
+        })
+        .collect()
 }
 
-fn is_subcategory_name(value: &str) -> bool {
-    matches!(
-        value,
-        "新鲜应用" | "新鲜游戏" | "时下畅销应用" | "时下畅销游戏"
-    )
-}
+const SUBCATEGORY_NAMES: &[&str] = &["新鲜应用", "新鲜游戏", "时下畅销应用", "时下畅销游戏"];
 
 #[cfg(test)]
 mod tests {
@@ -393,8 +368,41 @@ mod tests {
 
     #[test]
     fn 能识别新界面的子分类() {
-        assert!(is_subcategory_name("新鲜应用"));
-        assert!(is_subcategory_name("时下畅销游戏"));
-        assert!(!is_subcategory_name("工具"));
+        assert!(SUBCATEGORY_NAMES.contains(&"新鲜应用"));
+        assert!(SUBCATEGORY_NAMES.contains(&"时下畅销游戏"));
+        assert!(!SUBCATEGORY_NAMES.contains(&"工具"));
+    }
+
+    #[test]
+    fn 子分类入口不要求_button_控件() {
+        // 实机新版 AppGallery 的入口层级为 clickable Column -> Row -> Text，
+        // Row 和 Text 自身均不是 Button。
+        let tree: UiNode = serde_json::from_value(serde_json::json!({
+            "attributes": {"type": "Root"},
+            "children": [{
+                "attributes": {
+                    "type": "Column", "clickable": "true",
+                    "bounds": "[25,135][3095,190]"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "Row", "text": "新鲜应用",
+                        "bounds": "[50,137][3005,190]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Text", "text": "新鲜应用",
+                            "bounds": "[50,137][149,190]"
+                        },
+                        "children": []
+                    }]
+                }]
+            }]
+        }))
+        .unwrap();
+
+        let buttons = subcategory_buttons(&tree);
+        assert_eq!(buttons.len(), 1);
+        assert_eq!(buttons[0].name, "新鲜应用");
     }
 }

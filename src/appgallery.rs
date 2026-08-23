@@ -20,27 +20,31 @@ pub struct CategoryButton {
 pub fn category_buttons(tree: &UiNode) -> Vec<CategoryButton> {
     let mut best = Vec::new();
     let mut best_score = 0usize;
-    let list_nodes = tree.find_all(|node| node.node_type().as_deref() == Some("List"));
+    let list_nodes = tree.find_all(|node| node.attribute_str("type") == Some("List"));
 
     for list in list_nodes {
         let mut buttons = Vec::new();
         let mut unique_names = HashSet::new();
-        for button in list.find_all(|node| node.node_type().as_deref() == Some("Button")) {
-            let Some(text_node) =
-                button.find(|node| node.attribute("text").is_some_and(|text| !text.is_empty()))
-            else {
+        for button in list.find_all(|node| node.attribute_str("type") == Some("Button")) {
+            let Some(text_node) = button.find(|node| {
+                node.attribute_str("text")
+                    .is_some_and(|text| !text.is_empty())
+            }) else {
                 continue;
             };
-            let Some(name) = text_node.attribute("text") else {
+            let Some(name) = text_node.attribute_str("text") else {
                 continue;
             };
-            if is_category_tab_or_action(&name) || !unique_names.insert(name.clone()) {
+            if is_category_tab_or_action(name) || !unique_names.insert(name.to_owned()) {
                 continue;
             }
             let Some(bounds) = button.bounds().or_else(|| text_node.bounds()) else {
                 continue;
             };
-            buttons.push(CategoryButton { name, bounds });
+            buttons.push(CategoryButton {
+                name: name.to_owned(),
+                bounds,
+            });
         }
         if unique_names.len() >= best_score {
             best_score = unique_names.len();
@@ -52,10 +56,10 @@ pub fn category_buttons(tree: &UiNode) -> Vec<CategoryButton> {
 
 /// 选取应用卡片最多的 List，避免把导航栏或遮罩层误认为应用列表。
 pub fn app_snapshot(tree: &UiNode) -> Vec<AppEntry> {
-    let list_nodes = tree.find_all(|node| node.node_type().as_deref() == Some("List"));
+    let list_nodes = tree.find_all(|node| node.attribute_str("type") == Some("List"));
     let mut best = Vec::new();
     for list in list_nodes {
-        let current = app_entries(&list);
+        let current = app_entries(list);
         if current.len() > best.len() {
             best = current;
         }
@@ -67,17 +71,6 @@ pub fn app_snapshot(tree: &UiNode) -> Vec<AppEntry> {
     }
 }
 
-/// 判断指定包名是否处于前台任务中。
-pub fn foreground_bundle_present(output: &str, bundle: &str) -> bool {
-    let bundle_marker = format!("bundle name [{bundle}]");
-    output.split("Mission ID #").any(|mission| {
-        let is_foreground = mission
-            .lines()
-            .any(|line| line.trim_start().starts_with("state #FOREGROUND"));
-        is_foreground && mission.contains(&bundle_marker)
-    })
-}
-
 fn is_category_tab_or_action(value: &str) -> bool {
     matches!(
         value,
@@ -87,8 +80,8 @@ fn is_category_tab_or_action(value: &str) -> bool {
 
 fn app_entries(root: &UiNode) -> Vec<AppEntry> {
     let mut result = Vec::new();
-    for node in root.find_all(|node| node.attribute("key").as_deref() == Some("app_name")) {
-        let Some(name) = node.attribute("text") else {
+    for node in root.find_all(|node| node.attribute_str("key") == Some("app_name")) {
+        let Some(name) = node.attribute_str("text") else {
             continue;
         };
         if name.is_empty() {
@@ -97,7 +90,10 @@ fn app_entries(root: &UiNode) -> Vec<AppEntry> {
         let Some(bounds) = node.bounds() else {
             continue;
         };
-        let entry = AppEntry { name, bounds };
+        let entry = AppEntry {
+            name: name.to_owned(),
+            bounds,
+        };
         if !result.iter().any(|existing| existing == &entry) {
             result.push(entry);
         }
@@ -151,11 +147,5 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["A", "B"]
         );
-    }
-
-    #[test]
-    fn 前台包名会检查所有任务() {
-        let output = "Mission ID #1\n  bundle name [com.example.first]\n  state #FOREGROUND\nMission ID #2\n  bundle name [com.huawei.hmsapp.appgallery]\n  state #FOREGROUND\n";
-        assert!(foreground_bundle_present(output, APPGALLERY_BUNDLE));
     }
 }

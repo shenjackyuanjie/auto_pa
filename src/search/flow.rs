@@ -7,9 +7,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
 
-use crate::appgallery::{
-    APPGALLERY_ABILITY, APPGALLERY_BUNDLE, category_buttons, foreground_bundle_present,
-};
+use crate::appgallery::{APPGALLERY_ABILITY, APPGALLERY_BUNDLE, category_buttons};
 use crate::search::state::{SearchState, SearchStateStore};
 
 pub(crate) const MAX_CATEGORY_SCROLLS: usize = 100;
@@ -121,21 +119,10 @@ impl SearchFlow {
     }
 
     async fn wait_for_appgallery(&self, timeout: Duration) -> Result<bool> {
-        let deadline = tokio::time::Instant::now() + timeout;
-        loop {
-            let output = self
-                .driver
-                .raw_shell("aa dump -l")
-                .await
-                .context("查询 AppGallery 前台状态失败")?;
-            if foreground_bundle_present(&output.stdout, self.bundle.as_str()) {
-                return Ok(true);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Ok(false);
-            }
-            sleep(Duration::from_millis(250)).await;
-        }
+        self.driver
+            .wait_for_app(&self.bundle, timeout)
+            .await
+            .context("查询 AppGallery 前台状态失败")
     }
 
     pub(crate) async fn click_app_or_game(&self, page: &str) -> Result<()> {
@@ -146,8 +133,8 @@ impl SearchFlow {
         };
         self.click_local(
             move |node| {
-                node.attribute("text").as_deref() == Some(page)
-                    || key.is_some_and(|key| node.attribute("key").as_deref() == Some(key))
+                node.attribute_str("text") == Some(page)
+                    || key.is_some_and(|key| node.attribute_str("key") == Some(key))
             },
             &format!("{page}页签"),
             Duration::from_secs(12),
@@ -160,11 +147,11 @@ impl SearchFlow {
     pub(crate) async fn click_categories_tab(&self) -> Result<()> {
         self.click_local(
             |node| {
-                let text = node.attribute("text");
-                let key = node.attribute("key");
-                text.as_deref() == Some("分类")
+                let text = node.attribute_str("text");
+                let key = node.attribute_str("key");
+                text == Some("分类")
                     || matches!(
-                        key.as_deref(),
+                        key,
                         Some(
                             "Paf_Lantern_Button_Index_1"
                                 | "Paf_Lantern_Text_1"
@@ -195,7 +182,7 @@ impl SearchFlow {
 
     pub(crate) async fn wait_for_categories(&self, timeout: Duration) -> Result<UiNode> {
         self.driver
-            .wait_for_ui(timeout, |tree| !category_buttons(tree).is_empty())
+            .wait_for_ui_tree(timeout, |tree| !category_buttons(tree).is_empty())
             .await
             .context("等待分类列表超时")
     }
@@ -216,16 +203,19 @@ impl SearchFlow {
     where
         F: Fn(&UiNode) -> bool,
     {
-        let node = self
+        let tree = self
             .driver
-            .wait_for_ui(timeout, predicate)
+            .wait_for_ui_tree(timeout, |tree| tree.find(&predicate).is_some())
             .await
             .with_context(|| format!("等待 [{description}] 超时"))?;
+        let node = tree
+            .find_click_target(&predicate)
+            .ok_or_else(|| anyhow!("控件 [{description}] 没有有效点击目标"))?;
         let bounds = node
             .bounds()
             .ok_or_else(|| anyhow!("控件 [{description}] 没有有效 bounds"))?;
         self.driver.click(bounds.center()).await?;
-        Ok(node)
+        Ok(node.clone())
     }
 }
 

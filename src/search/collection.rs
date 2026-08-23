@@ -101,8 +101,8 @@ impl SearchFlow {
         if self.random_mode {
             let initial = self
                 .driver
-                .wait_for_ui(CATEGORY_CONTENT_TIMEOUT, |tree| {
-                    tree.find(|node| node.attribute("text").as_deref() == Some(FRESH_APPS_TEXT))
+                .wait_for_ui_tree(CATEGORY_CONTENT_TIMEOUT, |tree| {
+                    tree.find(|node| node.attribute_str("text") == Some(FRESH_APPS_TEXT))
                         .is_some()
                 })
                 .await
@@ -115,7 +115,7 @@ impl SearchFlow {
             self.click_fresh_apps(initial).await?;
             let app_layout = self
                 .driver
-                .wait_for_ui(CATEGORY_CONTENT_TIMEOUT, |tree| {
+                .wait_for_ui_tree(CATEGORY_CONTENT_TIMEOUT, |tree| {
                     !app_snapshot(tree).is_empty()
                 })
                 .await
@@ -144,7 +144,7 @@ impl SearchFlow {
             "等待分类应用列表"
         );
         self.driver
-            .wait_for_ui(CATEGORY_CONTENT_TIMEOUT, |tree| {
+            .wait_for_ui_tree(CATEGORY_CONTENT_TIMEOUT, |tree| {
                 !app_snapshot(tree).is_empty()
             })
             .await
@@ -154,7 +154,7 @@ impl SearchFlow {
     async fn click_fresh_apps(&self, initial: UiNode) -> Result<()> {
         info!(device = %self.device_label, "查找新鲜应用入口");
         let node = initial
-            .find(|node| node.attribute("text").as_deref() == Some(FRESH_APPS_TEXT))
+            .find(|node| node.attribute_str("text") == Some(FRESH_APPS_TEXT))
             .ok_or_else(|| anyhow!("进入分类后未找到 [{}] 入口", FRESH_APPS_TEXT))?;
         let bounds = node
             .bounds()

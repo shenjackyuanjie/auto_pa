@@ -9,8 +9,8 @@ description = "AppGallery UI search automation"
 anyhow = "1"
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
 hm_driver_rs = {
-    git = "https://github.com/shenjackyuanjie/hm_driver_rs.git",
-    rev = "ff53f86c45174721d35b25a91c3beac4cdcc00cf",
+    path = "../hm_driver_rs",
+    version = "0.1.2",
     default-features = false,
     features = ["embedded-agents"]
 }
