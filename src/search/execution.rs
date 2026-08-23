@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail};
-use hm_driver_rs::{Element, KeyCode, MatchPattern, Selector};
+use hm_driver_rs::{KeyCode, UiNode};
 use rand::seq::SliceRandom;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -88,7 +88,7 @@ impl SearchFlow {
         info!(device = %self.device_label, "准备应用搜索主页");
         self.start_appgallery().await?;
         self.click_app_or_game("应用").await?;
-        self.wait_for_key_element(SEARCH_FIELD_KEY_PREFIX, Duration::from_secs(12))
+        self.wait_for_key_node(SEARCH_FIELD_KEY_PREFIX, Duration::from_secs(12))
             .await?;
         self.home_ready = true;
         info!(device = %self.device_label, "应用搜索主页就绪");
@@ -96,12 +96,14 @@ impl SearchFlow {
     }
 
     async fn search_once(&mut self, app_name: &str) -> Result<usize> {
-        let search_field = self
-            .wait_for_key_element(SEARCH_FIELD_KEY_PREFIX, Duration::from_secs(12))
-            .await?;
-        search_field.click().await?;
+        self.click_key_prefix(
+            SEARCH_FIELD_KEY_PREFIX,
+            Duration::from_secs(12),
+            "搜索输入框",
+        )
+        .await?;
         sleep(SEARCH_INPUT_FOCUS_SETTLE).await;
-        search_field.input_text(app_name).await?;
+        self.driver.input_text(app_name).await?;
         sleep(SEARCH_INPUT_SETTLE).await;
         if is_english_query(app_name) {
             debug!(app = %app_name, "英文查询输入完成，收起输入法");
@@ -109,10 +111,8 @@ impl SearchFlow {
             sleep(SEARCH_CLICK_SETTLE).await;
         }
 
-        let search_button = self
-            .wait_for_key_element(SEARCH_BUTTON_KEY_PREFIX, Duration::from_secs(5))
+        self.click_key_prefix(SEARCH_BUTTON_KEY_PREFIX, Duration::from_secs(5), "搜索按钮")
             .await?;
-        search_button.click().await?;
         sleep(SEARCH_CLICK_SETTLE).await;
 
         let result_page = self
@@ -144,16 +144,19 @@ impl SearchFlow {
         )
         .await?;
         sleep(SEARCH_CLICK_SETTLE).await;
-        self.wait_for_key_element(SEARCH_FIELD_KEY_PREFIX, Duration::from_secs(15))
+        self.wait_for_key_node(SEARCH_FIELD_KEY_PREFIX, Duration::from_secs(15))
             .await?;
         self.home_ready = true;
         Ok(result_count)
     }
 
-    async fn wait_for_key_element(&self, key_prefix: &str, timeout: Duration) -> Result<Element> {
-        let selector = Selector::new().key(MatchPattern::StartsWith(key_prefix.to_owned()));
+    /// 使用 `dumpLayout` 的本地快照按 key 等待控件。
+    ///
+    /// 部分 Hypium Agent 未实现 `On.key`，不能使用远端 `Selector::key`；但布局树仍会
+    /// 暴露 key 和 bounds，因此在本地匹配后按坐标操作。
+    async fn wait_for_key_node(&self, key_prefix: &str, timeout: Duration) -> Result<UiNode> {
         self.driver
-            .wait_for(&selector, timeout)
+            .wait_for_ui(timeout, |node| key_starts_with(node, key_prefix))
             .await
             .with_context(|| format!("等待控件 [{}] 超时", key_prefix))
     }
@@ -163,21 +166,42 @@ impl SearchFlow {
         key: &str,
         timeout: Duration,
         description: &str,
-    ) -> Result<Element> {
-        let selector = Selector::new().key(key);
+    ) -> Result<UiNode> {
         self.driver
-            .wait_for(&selector, timeout)
+            .wait_for_ui(timeout, |node| node.attribute_str("key") == Some(key))
             .await
             .with_context(|| format!("等待 [{}] 超时", description))
     }
 
-    async fn click_local_key(&self, key: &str, timeout: Duration, description: &str) -> Result<()> {
-        self.wait_local_key(key, timeout, description)
-            .await?
-            .click()
-            .await?;
-        Ok(())
+    async fn click_key_prefix(
+        &self,
+        key_prefix: &str,
+        timeout: Duration,
+        description: &str,
+    ) -> Result<()> {
+        let node = self.wait_for_key_node(key_prefix, timeout).await?;
+        self.click_ui_node(node, description).await
     }
+
+    async fn click_local_key(&self, key: &str, timeout: Duration, description: &str) -> Result<()> {
+        let node = self.wait_local_key(key, timeout, description).await?;
+        self.click_ui_node(node, description).await
+    }
+
+    async fn click_ui_node(&self, node: UiNode, description: &str) -> Result<()> {
+        let bounds = node
+            .bounds()
+            .ok_or_else(|| anyhow::anyhow!("控件 [{description}] 没有有效 bounds"))?;
+        self.driver
+            .click(bounds.center())
+            .await
+            .with_context(|| format!("点击控件 [{description}] 失败"))
+    }
+}
+
+fn key_starts_with(node: &UiNode, key_prefix: &str) -> bool {
+    node.attribute_str("key")
+        .is_some_and(|key| key.starts_with(key_prefix))
 }
 
 fn is_english_query(value: &str) -> bool {
@@ -190,6 +214,7 @@ fn is_english_query(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn 英文查询识别符合键盘处理逻辑() {
@@ -197,5 +222,16 @@ mod tests {
         assert!(!is_english_query("微信"));
         assert!(!is_english_query("Facebook 微信"));
         assert!(!is_english_query("12345"));
+    }
+
+    #[test]
+    fn key_以前缀匹配布局节点() {
+        let node: UiNode = serde_json::from_value(json!({
+            "attributes": {"key": "__SearchField__search_box2"},
+            "children": []
+        }))
+        .unwrap();
+        assert!(key_starts_with(&node, SEARCH_FIELD_KEY_PREFIX));
+        assert!(!key_starts_with(&node, SEARCH_BUTTON_KEY_PREFIX));
     }
 }
