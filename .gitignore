@@ -15,3 +15,4 @@ try_get.py
 
 /hypium
 logs/search-rust.log.*
+logs/hilog-rust.log.*
