@@ -49,6 +49,7 @@ class TUIDisplay:
         if self.current_line:
             print(self.current_line, end="", flush=True)
 
+
 tui = TUIDisplay()
 
 
@@ -59,6 +60,7 @@ class Statistics:
         self.total_apps_processed = 0
         self.total_apps_shared = 0
         self.exit_reason = "未知"
+
 
 stats = Statistics()
 
@@ -73,14 +75,14 @@ def play_beep(count: int = 3):
 
 def search(name: str) -> bool | None:
     """查询应用是否存在"""
-    base_url = "http://shenjack.top:10003/api/v0/apps/list/1"
+    base_url = "https://hmos.txit.top/api/apps/list/1"
     params = {
         "sort": "download_count",
         "desc": "true",
         "page_size": "1",
         "search_key": "name",
         "search_value": name,
-        "search_exact": "true"
+        "search_exact": "true",
     }
 
     try:
@@ -99,7 +101,9 @@ def search(name: str) -> bool | None:
         return None
     return None
 
+
 run_name: None | str = None
+
 
 def get_layout() -> dict[str, str | list]:
     """执行 hdc shell uitest dumpLayout 获取 UI 结构"""
@@ -111,8 +115,8 @@ def get_layout() -> dict[str, str | list]:
             capture_output=True,
             text=True,
             check=True,
-            encoding='utf-8',
-            errors='ignore'
+            encoding="utf-8",
+            errors="ignore",
         )
         output = result.stdout
     except subprocess.CalledProcessError as e:
@@ -122,7 +126,9 @@ def get_layout() -> dict[str, str | list]:
 
     match = re.search(r"saved to:\s*(/data/local/tmp/.*\.json)", output)
     if not match:
-        raise RuntimeError(f"未能从输出中解析出文件路径。Output: {output.strip()[:100]}")
+        raise RuntimeError(
+            f"未能从输出中解析出文件路径。Output: {output.strip()[:100]}"
+        )
 
     remote_path = match.group(1).strip()
     local_path = Path("./layout.json")
@@ -264,7 +270,7 @@ def analyze_data(data) -> list[dict]:
             completed_count += 1
             tui.update(f"🔎 正在查询应用 ({completed_count}/{total_apps})...")
 
-    new_apps_count = len([app for app in app_datas if app['exists'] is False])
+    new_apps_count = len([app for app in app_datas if app["exists"] is False])
     tui.update(f"✅ 找到 {total_apps} 个应用，其中 {new_apps_count} 个新应用")
 
     return app_datas
@@ -276,21 +282,76 @@ def share_at(x: int, y: int) -> None:
     # 构建易读的 hdc shell uinput 命令序列（保留原有执行顺序与参数）
     # 将每个参数/片段拆分成列表，便于阅读与维护
     uinput_parts = [
-        "hdc", "shell", "uinput", "-T",
-        "-d", target_pos, "-i", "60",
-        "-u", target_pos, "-i", "900",
-        "-d", "1150", "200", "-i", "60",
-        "-u", "1150", "200", "-i", "600",
-        "-d", "400", "2200", "-i", "60",
-        "-u", "400", "2200", "-i", "900",
-        "-d", "150", "650", "-i", "60",
-        "-u", "150", "650", "-i", "400",
-        "-d", "800", "1700", "-i", "60",
-        "-u", "800", "1700", "-i", "300",
-        "-d", "400", "2800", "-i", "60",
-        "-u", "400", "2800", "-i", "300",
-        "-d", "400", "2800", "-i", "60",
-        "-u", "400", "2800"
+        "hdc",
+        "shell",
+        "uinput",
+        "-T",
+        "-d",
+        target_pos,
+        "-i",
+        "60",
+        "-u",
+        target_pos,
+        "-i",
+        "900",
+        "-d",
+        "1150",
+        "200",
+        "-i",
+        "60",
+        "-u",
+        "1150",
+        "200",
+        "-i",
+        "600",
+        "-d",
+        "400",
+        "2200",
+        "-i",
+        "60",
+        "-u",
+        "400",
+        "2200",
+        "-i",
+        "900",
+        "-d",
+        "150",
+        "650",
+        "-i",
+        "60",
+        "-u",
+        "150",
+        "650",
+        "-i",
+        "400",
+        "-d",
+        "800",
+        "1700",
+        "-i",
+        "60",
+        "-u",
+        "800",
+        "1700",
+        "-i",
+        "300",
+        "-d",
+        "400",
+        "2800",
+        "-i",
+        "60",
+        "-u",
+        "400",
+        "2800",
+        "-i",
+        "300",
+        "-d",
+        "400",
+        "2800",
+        "-i",
+        "60",
+        "-u",
+        "400",
+        "2800",
     ]
 
     # 最终命令字符串（与原始单行命令等价）
@@ -322,7 +383,7 @@ def share_app(app_datas: list[dict]) -> None:
 
     for idx, app in enumerate(new_apps, 1):
         x, y = app["center"]
-        app_name = app['name']
+        app_name = app["name"]
         shared_names.append(app_name)
 
         # 使用 update 动态更新，不换行
@@ -342,17 +403,17 @@ def print_statistics():
     minutes, seconds = divmod(remainder, 60)
 
     tui.finish()
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)
     print("📊 运行统计信息")
-    print("="*60)
+    print("=" * 60)
     print(f"📂 分类名: {run_name if run_name else '未知'}")
     print(f"🔄 总运行轮次: {stats.total_rounds}")
     print(f"📱 总处理应用数: {stats.total_apps_processed}")
     print(f"🆕 总分享新应用数: {stats.total_apps_shared}")
     print(f"⏱️  运行总时长: {int(hours)}小时 {int(minutes)}分钟 {int(seconds)}秒")
-    print("="*60)
+    print("=" * 60)
     print(f"🚪 退出原因: {stats.exit_reason}")
-    print("="*60)
+    print("=" * 60)
 
     # 确保只要打印统计信息，就会响铃
     play_beep()
@@ -384,7 +445,7 @@ if __name__ == "__main__":
                 下滑_11()
                 continue
 
-            current_app_names = [app['name'] for app in app_datas]
+            current_app_names = [app["name"] for app in app_datas]
 
             if current_app_names == previous_app_names and len(current_app_names) > 0:
                 tui.finish("🏁 检测到应用列表不再变化，任务完成")
@@ -392,7 +453,7 @@ if __name__ == "__main__":
                 break
 
             stats.total_apps_processed += len(app_datas)
-            new_count = len([app for app in app_datas if app['exists'] is False])
+            new_count = len([app for app in app_datas if app["exists"] is False])
             stats.total_apps_shared += new_count
 
             share_app(app_datas)

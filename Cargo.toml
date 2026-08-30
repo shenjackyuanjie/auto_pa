@@ -1,0 +1,23 @@
+[package]
+name = "auto-pa-rs"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "AppGallery UI search automation"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
+hm_driver_rs = {
+    path = "../hm_driver_rs",
+    version = "0.1.2",
+    default-features = false,
+    features = ["embedded-agents"]
+}
+rand = "0.10"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = "0.3"

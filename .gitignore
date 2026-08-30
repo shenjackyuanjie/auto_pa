@@ -3,3 +3,16 @@
 try_get.py
 
 *__pycache__*
+.python-version
+.lh
+.cache
+.venv
+
+
+# Added by cargo
+
+/target
+
+/hypium
+logs/search-rust.log.*
+logs/hilog-rust.log.*
