@@ -15,6 +15,9 @@ const MAX_SEARCH_ATTEMPTS: usize = 3;
 const SEARCH_INPUT_FOCUS_SETTLE: Duration = Duration::from_millis(200);
 const SEARCH_INPUT_SETTLE: Duration = Duration::from_millis(300);
 const SEARCH_CLICK_SETTLE: Duration = Duration::from_millis(100);
+const SEARCH_BUTTON_TIMEOUT: Duration = Duration::from_secs(5);
+/// 回车提交后浮层可能连同“搜索”按钮一起消失，因此只做一次短暂探测。
+const SEARCH_BUTTON_AFTER_ENTER_TIMEOUT: Duration = Duration::from_millis(800);
 
 impl SearchFlow {
     pub(crate) async fn search_pending(&mut self) -> Result<()> {
@@ -105,15 +108,35 @@ impl SearchFlow {
         sleep(SEARCH_INPUT_FOCUS_SETTLE).await;
         self.driver.input_text(app_name).await?;
         sleep(SEARCH_INPUT_SETTLE).await;
-        if is_english_query(app_name) {
-            debug!(app = %app_name, "英文查询输入完成，收起输入法");
+
+        // 提交搜索：英文查询先按回车，其余情况点“搜索”按钮。
+        //
+        // 部分设备（如 MatePad）按回车会直接提交并跳转搜索结果页，此时搜索框与浮层里的
+        // “搜索”按钮的 key 从 `…search_boxN` 变成 `…searchFrameInput1`，按钮随即消失。
+        // 因此回车之后按钮缺失属于正常情况，不能当作搜索失败：本次搜索是否成功，交给
+        // 后面的搜索结果页判断。
+        let english = is_english_query(app_name);
+        if english {
+            debug!(app = %app_name, "英文查询输入完成，按回车提交");
             self.driver.press_key_code(KeyCode::Enter).await?;
             sleep(SEARCH_CLICK_SETTLE).await;
         }
 
-        self.click_key_prefix(SEARCH_BUTTON_KEY_PREFIX, Duration::from_secs(5), "搜索按钮")
-            .await?;
-        sleep(SEARCH_CLICK_SETTLE).await;
+        let button_timeout = if english {
+            SEARCH_BUTTON_AFTER_ENTER_TIMEOUT
+        } else {
+            SEARCH_BUTTON_TIMEOUT
+        };
+        match self
+            .click_key_prefix(SEARCH_BUTTON_KEY_PREFIX, button_timeout, "搜索按钮")
+            .await
+        {
+            Ok(()) => sleep(SEARCH_CLICK_SETTLE).await,
+            Err(error) if english => {
+                debug!(app = %app_name, error = %error, "回车后未找到搜索按钮，按已提交处理");
+            }
+            Err(error) => return Err(error),
+        }
 
         let result_page = self
             .wait_local_key(
