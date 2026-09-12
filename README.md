@@ -55,3 +55,7 @@ cargo run --release -- hilog
 `--loop-wait 5m`、`--ping 15` 和 `--keep-open-on-error`。`--submit`
 为未来的 hilog 抓取和应用投稿流程预留；当前版本会明确拒绝该参数，避免悄悄执行
 不完整的投稿流程。
+
+偶发情况（等待分类内容或应用列表超时、当前页面没有应用卡片）只记录 warning 并跳过
+当前分类，不会让整台设备失败，这与 Python `hilog --no-submit` 的容错行为一致。
+只有结构性失败（找不到分类列表、滚动次数超过上限）仍会报错。

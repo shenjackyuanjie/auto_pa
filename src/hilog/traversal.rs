@@ -211,8 +211,18 @@ impl UiTraversal {
             .wait_for_category_content(Duration::from_secs(12))
             .await?;
         if subcategory_buttons(&content).is_empty() {
-            let count = self.drain_app_list(content, &button.name).await?;
-            info!(device = %self.device_label, category = %button.name, apps = count, "分类应用列表遍历完成");
+            if app_snapshot(&content).is_empty() {
+                // 偶发空帧或页面还在切换时跳过该分类，避免一台设备的偶发问题导致整轮失败。
+                warn!(
+                    device = %self.device_label,
+                    page,
+                    category = %button.name,
+                    "分类页面无内容，跳过该分类"
+                );
+            } else {
+                let count = self.drain_app_list(content, &button.name).await?;
+                info!(device = %self.device_label, category = %button.name, apps = count, "分类应用列表遍历完成");
+            }
         } else {
             self.drain_subcategories(&button.name).await?;
         }
@@ -269,7 +279,13 @@ impl UiTraversal {
         for _ in 0..MAX_SCROLLS {
             let snapshot = app_snapshot(&tree);
             if snapshot.is_empty() {
-                bail!("分类 [{category}] 当前页面未找到应用卡片");
+                // Python 实现在这里直接结束本轮读取；偶发空帧不应该让整台设备失败。
+                warn!(
+                    device = %self.device_label,
+                    category,
+                    "当前页面未找到应用卡片，结束该列表读取"
+                );
+                return Ok(seen_names.len());
             }
             let before = seen_names.len();
             seen_names.extend(snapshot.into_iter().map(|entry| entry.name));
@@ -304,20 +320,51 @@ impl UiTraversal {
             .context("等待分类列表超时")
     }
 
+    /// 等待分类页内容；超时只记录警告并退化为当前 UI，由调用方按空内容跳过。
     async fn wait_for_category_content(&self, timeout: Duration) -> Result<UiNode> {
-        self.driver
+        match self
+            .driver
             .wait_for_ui_tree(timeout, |tree| {
                 !subcategory_buttons(tree).is_empty() || !app_snapshot(tree).is_empty()
             })
             .await
-            .context("等待分类内容超时")
+        {
+            Ok(tree) => Ok(tree),
+            Err(error) => {
+                warn!(
+                    device = %self.device_label,
+                    error = %error,
+                    "等待分类内容超时，按空内容继续"
+                );
+                self.driver
+                    .ui_tree()
+                    .await
+                    .context("获取当前 UI 树失败")
+            }
+        }
     }
 
+    /// 等待应用列表；超时只记录警告并退化为当前 UI，让空列表按 Python 的行为被跳过。
     async fn wait_for_app_list(&self, timeout: Duration, category: &str) -> Result<UiNode> {
-        self.driver
+        match self
+            .driver
             .wait_for_ui_tree(timeout, |tree| !app_snapshot(tree).is_empty())
             .await
-            .with_context(|| format!("分类 [{category}] 等待应用列表超时"))
+        {
+            Ok(tree) => Ok(tree),
+            Err(error) => {
+                warn!(
+                    device = %self.device_label,
+                    category,
+                    error = %error,
+                    "等待应用列表超时，按空列表继续"
+                );
+                self.driver
+                    .ui_tree()
+                    .await
+                    .with_context(|| format!("分类 [{category}] 获取当前 UI 树失败"))
+            }
+        }
     }
 
     async fn scroll_up(&self) -> Result<()> {
