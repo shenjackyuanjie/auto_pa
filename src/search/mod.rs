@@ -1,9 +1,10 @@
 //! `search` 子命令的业务流程：先遍历分类收集应用名称并持久化进度，再逐个搜索这些
 //! 名称，最后刷新一轮分类以搜索新发现的名字。
 //!
-//! 子模块的可见性区分了两类内容：`flow` 与 `state` 需要被 `command` 层复用，因此是
-//! `pub`；`collection`、`developer`、`execution` 只是分别给
-//! [`SearchFlow`](flow::SearchFlow) 挂 `impl` 的内部实现，属于实现细节，保持私有。
+//! 子模块的可见性区分了两类内容：`flow` 与 `state` 是 `pub`（`command` 层从这里获取
+//! 设备流程入口，进度文件的格式也由此对外暴露）；`collection`、`developer`、
+//! `execution` 只是分别给 [`SearchFlow`](flow::SearchFlow) 挂 `impl` 的内部实现，
+//! 属于实现细节，保持私有。
 
 /// 搜索主流程：启动 AppGallery、收集分类名称、按进度搜索并处理失败重试。
 pub mod flow;
