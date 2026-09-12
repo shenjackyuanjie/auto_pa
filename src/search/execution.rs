@@ -1,3 +1,12 @@
+//! 按名称搜索 AppGallery：把收集到的应用名逐个填进搜索框并提交。
+//!
+//! 该模块是 `SearchFlow::run` 的第二阶段：`collection` 先遍历分类把应用名写进状态文件，
+//! 这里再按名称逐个搜索，把结果页的第一个应用交给 `developer` 做同开发者的应用收集。
+//!
+//! 前置页面状态：AppGallery 已启动并停留在「应用」页签的搜索首页。`ensure_search_home`
+//! 负责建立这个状态，`search_once` 结束时也必须回到同一状态，下一轮名称才能直接继续输入。
+//! 本轮失败的名称不会被标记为已搜索，由调用方在下一轮重试。
+
 use anyhow::{Context, Result, bail};
 use hm_driver_rs::{KeyCode, UiNode};
 use rand::seq::SliceRandom;
@@ -10,16 +19,22 @@ use crate::search::flow::SearchFlow;
 
 const SEARCH_FIELD_KEY_PREFIX: &str = "__SearchField__search_box";
 const SEARCH_BUTTON_KEY_PREFIX: &str = "__SearchField__Button__search_box";
-const SEARCH_RESULT_BACK_KEY: &str = "SearchInputCard.Button.searchFrameBack";
+pub(crate) const SEARCH_RESULT_BACK_KEY: &str = "SearchInputCard.Button.searchFrameBack";
 const MAX_SEARCH_ATTEMPTS: usize = 3;
 const SEARCH_INPUT_FOCUS_SETTLE: Duration = Duration::from_millis(200);
 const SEARCH_INPUT_SETTLE: Duration = Duration::from_millis(300);
 const SEARCH_CLICK_SETTLE: Duration = Duration::from_millis(100);
 const SEARCH_BUTTON_TIMEOUT: Duration = Duration::from_secs(5);
+const RESULT_LIST_TIMEOUT: Duration = Duration::from_secs(6);
 /// 回车提交后浮层可能连同“搜索”按钮一起消失，因此只做一次短暂探测。
 const SEARCH_BUTTON_AFTER_ENTER_TIMEOUT: Duration = Duration::from_millis(800);
 
 impl SearchFlow {
+    /// 搜索所有尚未搜索过的名称，任一名称三次尝试都失败则整轮报错。
+    ///
+    /// 单次失败会先把 `home_ready` 置为假再重建搜索首页，因为失败可能发生在任何一步，
+    /// 当前页面已经不确定；重建比猜测界面状态更可靠。已经成功的名称逐个落盘，中途中断也
+    /// 不会丢失进度。
     pub(crate) async fn search_pending(&mut self) -> Result<()> {
         let mut pending = self.state.pending_names();
         if pending.is_empty() {
@@ -84,6 +99,10 @@ impl SearchFlow {
         }
     }
 
+    /// 确保停在搜索首页：重启 AppGallery、进入「应用」页签并等到搜索框出现。
+    ///
+    /// `home_ready` 只是缓存：搜索过程中的失败或页面跳转都会把它置为假，避免在错误页面上
+    /// 继续按 key 等待搜索控件。
     async fn ensure_search_home(&mut self) -> Result<()> {
         if self.home_ready {
             return Ok(());
@@ -98,6 +117,12 @@ impl SearchFlow {
         Ok(())
     }
 
+    /// 搜索单个名称并返回搜索结果页第一屏的应用数量。
+    ///
+    /// 流程：点击搜索输入框并输入文本、提交搜索、在搜索结果页上做开发者收集与列表统计，
+    /// 最后点结果页返回按钮回到搜索首页。成功的唯一判据是结果页返回按钮出现，搜索按钮是否
+    /// 存在不参与判断。调用方需要 `ensure_search_home` 建立的前置状态；本函数无论成功与否
+    /// 都让页面停在搜索首页，并刷新 `home_ready` 缓存。
     async fn search_once(&mut self, app_name: &str) -> Result<usize> {
         self.click_key_prefix(
             SEARCH_FIELD_KEY_PREFIX,
@@ -122,6 +147,7 @@ impl SearchFlow {
             sleep(SEARCH_CLICK_SETTLE).await;
         }
 
+        // 中文等非英文查询不会走回车路径，搜索按钮应当还在，因此照常等待完整超时。
         let button_timeout = if english {
             SEARCH_BUTTON_AFTER_ENTER_TIMEOUT
         } else {
@@ -138,24 +164,39 @@ impl SearchFlow {
             Err(error) => return Err(error),
         }
 
-        let result_page = self
-            .wait_local_key(
-                SEARCH_RESULT_BACK_KEY,
-                Duration::from_secs(15),
-                "搜索结果页",
-            )
-            .await?;
-        let result_count = match self
+        self.wait_local_key(
+            SEARCH_RESULT_BACK_KEY,
+            Duration::from_secs(15),
+            "搜索结果页",
+        )
+        .await?;
+
+        // 结果页刚打开时列表还在顶部，先取第一个应用做开发者收集：`collect_app_list`
+        // 会把列表滚到半路，之后再想点第一个应用就得先滚回顶部。
+        let result_layout = self
             .driver
-            .wait_for_ui_tree(Duration::from_secs(6), |tree| {
-                !app_snapshot(tree).is_empty()
-            })
+            .wait_for_ui_tree(RESULT_LIST_TIMEOUT, |tree| !app_snapshot(tree).is_empty())
             .await
+            .ok();
+
+        if self.developer_scan
+            && let Some(layout) = result_layout.as_ref()
         {
-            Ok(layout) => self.collect_app_list(layout, false).await?.len(),
-            Err(_) => {
+            match self.collect_developer_apps(layout).await {
+                Ok(collected) => {
+                    info!(app = %app_name, collected, "同开发者应用收集结束");
+                }
+                Err(error) => {
+                    warn!(app = %app_name, error = %error, "同开发者应用收集失败");
+                    self.recover_to_result_page().await?;
+                }
+            }
+        }
+
+        let result_count = match result_layout {
+            Some(layout) => self.collect_app_list(layout, false).await?.len(),
+            None => {
                 debug!(app = %app_name, "搜索结果页没有应用卡片");
-                let _ = result_page;
                 0
             }
         };
@@ -227,6 +268,9 @@ fn key_starts_with(node: &UiNode, key_prefix: &str) -> bool {
         .is_some_and(|key| key.starts_with(key_prefix))
 }
 
+/// 判断查询是否能用软键盘回车提交：必须全是 ASCII 且含有英文字母。
+///
+/// 纯数字查询按回车没有提交效果，所以要求至少一个 ASCII 字母。
 fn is_english_query(value: &str) -> bool {
     value
         .chars()

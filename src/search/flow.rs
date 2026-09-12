@@ -18,12 +18,15 @@ pub(crate) const CATEGORY_CLICK_SETTLE: Duration = Duration::from_secs(1);
 pub(crate) const CATEGORY_SCROLL_SETTLE: Duration = Duration::from_millis(850);
 pub(crate) const CATEGORY_CONTENT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const BACK_SETTLE: Duration = Duration::from_millis(1500);
+/// 应用详情页每滚动一屏后的等待时间。
+pub(crate) const DETAIL_SCROLL_SETTLE: Duration = Duration::from_millis(700);
 
 pub struct SearchFlow {
     pub(crate) driver: HmDriver,
     pub(crate) state: SearchState,
     pub(crate) store: SearchStateStore,
     pub(crate) random_mode: bool,
+    pub(crate) developer_scan: bool,
     pub(crate) bundle: AppIdentifier,
     pub(crate) home_ready: bool,
     pub(crate) device_label: String,
@@ -35,6 +38,7 @@ impl SearchFlow {
         state: SearchState,
         store: SearchStateStore,
         random_mode: bool,
+        developer_scan: bool,
         device_label: String,
     ) -> Result<Self> {
         Ok(Self {
@@ -42,6 +46,7 @@ impl SearchFlow {
             state,
             store,
             random_mode,
+            developer_scan,
             bundle: AppIdentifier::new(APPGALLERY_BUNDLE)?,
             home_ready: false,
             device_label,
@@ -225,6 +230,7 @@ pub async fn run_device(
     hdc_config: HdcConfig,
     fresh: bool,
     random_mode: bool,
+    developer_scan: bool,
 ) -> Result<()> {
     let device_label = format!("device-{index}");
     let store = SearchStateStore::for_device(&serial, random_mode);
@@ -238,6 +244,7 @@ pub async fn run_device(
         serial = %serial,
         state = %store.path().display(),
         random = random_mode,
+        developer = developer_scan,
         fresh,
         "设备信息"
     );
@@ -248,7 +255,14 @@ pub async fn run_device(
         .await
         .context("连接 HmDriver 失败")?;
     info!(device = %device_label, "HmDriver 连接成功");
-    let mut flow = SearchFlow::new(driver, state, store, random_mode, device_label.clone())?;
+    let mut flow = SearchFlow::new(
+        driver,
+        state,
+        store,
+        random_mode,
+        developer_scan,
+        device_label.clone(),
+    )?;
     let run_result = flow.run().await;
     let cleanup_result = flow.shutdown().await;
     match (run_result, cleanup_result) {

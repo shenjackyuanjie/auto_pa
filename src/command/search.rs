@@ -17,6 +17,10 @@ pub struct SearchArgs {
     #[arg(long)]
     random: bool,
 
+    /// 跳过「打开搜索结果里的第一个应用，收集同开发者的应用」这一步。
+    #[arg(long)]
+    skip_developer: bool,
+
     /// 输出更详细的日志。
     #[arg(short, long)]
     pub verbose: bool,
@@ -67,6 +71,7 @@ pub async fn run(cli: SearchArgs) -> Result<()> {
             hdc_config.clone(),
             cli.fresh,
             cli.random,
+            !cli.skip_developer,
         ));
     }
 
