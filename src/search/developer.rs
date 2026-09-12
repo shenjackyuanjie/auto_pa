@@ -129,8 +129,8 @@ impl SearchFlow {
     /// 点击区块标题行最右侧的「更多」入口，进入开发者应用列表页。
     ///
     /// 该入口没有 key 也没有 text，只能按「可点击、与标题同一行、位于标题右侧」定位。
-    /// 在满足条件的候选中不断保留 `left` 最小者，是因为右侧还可能存在其它可点击控件，
-    /// 而这个入口是标题右侧最靠左的一个。定位失败直接报错，交由调用方恢复页面。
+    /// 同时满足条件的控件里取 `left` 最小者：那是标题右侧最靠近标题的一个，再往右才是
+    /// 页面上的其它可点击控件。定位失败直接报错，交由调用方恢复页面。
     async fn click_developer_more(&self, tree: &UiNode) -> Result<()> {
         let title = tree
             .find(|node| node.attribute_str("text") == Some(DEVELOPER_SECTION_TITLE))
@@ -167,8 +167,8 @@ impl SearchFlow {
 
     /// 开发者列表页 -> 详情页 -> 搜索结果页。
     ///
-    /// 只看层级不看页面内容：不管当时停在列表页还是详情页，代价都是回到搜索结果页，
-    /// 最后由 `wait_result_page` 确认已经到达。
+    /// 调用方只在进入开发者列表页之前失败时才会回到这里；此时后退两次会先回到搜索结果页，
+    /// 结果页通常忽略多余的后退，最后仍由 `wait_result_page` 确认位置。
     async fn back_to_result_page(&self) -> Result<()> {
         for step in 0..2 {
             self.driver.go_back().await?;
@@ -179,6 +179,10 @@ impl SearchFlow {
     }
 
     /// 详情页流程意外中断时，把界面恢复到搜索结果页。
+    ///
+    /// 中断可能发生在详情页、开发者列表页或某个还没加载完的中间页，不知道需要后退几次，
+    /// 因此每轮先看当前树里有没有搜索结果页的返回按钮：已经回到就立刻结束，否则后退一次
+    /// 再判断，最多 `RECOVER_ATTEMPTS` 次，最后仍按搜索结果页继续等待并给出超时错误。
     pub(crate) async fn recover_to_result_page(&self) -> Result<()> {
         for attempt in 0..RECOVER_ATTEMPTS {
             let tree = self.driver.ui_tree().await?;
@@ -192,6 +196,7 @@ impl SearchFlow {
         self.wait_result_page().await
     }
 
+    /// 以搜索结果页的返回按钮为准，确认已经离开详情页与开发者列表页。
     async fn wait_result_page(&self) -> Result<()> {
         self.driver
             .wait_for_ui(
@@ -205,6 +210,9 @@ impl SearchFlow {
 }
 
 /// 结果页按先上后左的顺序取第一个应用卡片。
+///
+/// `app_snapshot` 的返回顺序取决于布局树遍历顺序，三列网格下不保证第一个就是左上角，
+/// 因此显式按行再按列排序。
 fn first_result_entry(tree: &UiNode) -> Option<AppEntry> {
     let mut entries = app_snapshot(tree);
     entries.sort_by_key(|entry| (entry.bounds.top, entry.bounds.left));
@@ -230,6 +238,9 @@ fn has_key(tree: &UiNode, key: &str) -> bool {
 }
 
 /// 用页面上去重后的全部文本作为签名，用来判断滚动是否还有进展。
+///
+/// 排序去掉顺序差异后拼接，因此截图内容相同的相邻两屏签名一致；`reveal_developer_section`
+/// 靠它识别详情页已经到底。
 fn page_signature(tree: &UiNode) -> String {
     let mut items: Vec<String> = Vec::new();
     for node in tree.find_all(|node| {

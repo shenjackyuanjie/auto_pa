@@ -121,8 +121,8 @@ impl SearchFlow {
     ///
     /// 流程：点击搜索输入框并输入文本、提交搜索、在搜索结果页上做开发者收集与列表统计，
     /// 最后点结果页返回按钮回到搜索首页。成功的唯一判据是结果页返回按钮出现，搜索按钮是否
-    /// 存在不参与判断。调用方需要 `ensure_search_home` 建立的前置状态；本函数无论成功与否
-    /// 都让页面停在搜索首页，并刷新 `home_ready` 缓存。
+    /// 存在不参与判断。调用方需要 `ensure_search_home` 建立的前置状态；成功返回时页面停在
+    /// 搜索首页（`home_ready` 保持有效），中途报错则由调用方重建首页。
     async fn search_once(&mut self, app_name: &str) -> Result<usize> {
         self.click_key_prefix(
             SEARCH_FIELD_KEY_PREFIX,
@@ -173,6 +173,8 @@ impl SearchFlow {
 
         // 结果页刚打开时列表还在顶部，先取第一个应用做开发者收集：`collect_app_list`
         // 会把列表滚到半路，之后再想点第一个应用就得先滚回顶部。
+        //
+        // 这里只用 `.ok()`：跳过开发者收集、或结果页确实没有卡片时，搜索本身仍算成功。
         let result_layout = self
             .driver
             .wait_for_ui_tree(RESULT_LIST_TIMEOUT, |tree| !app_snapshot(tree).is_empty())
@@ -188,6 +190,7 @@ impl SearchFlow {
                 }
                 Err(error) => {
                     warn!(app = %app_name, error = %error, "同开发者应用收集失败");
+                    // 收集过程中可能已经离开结果页，先恢复页面再继续统计结果列表。
                     self.recover_to_result_page().await?;
                 }
             }
