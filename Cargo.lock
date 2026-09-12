@@ -259,7 +259,9 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 
 [[package]]
 name = "hm_driver_rs"
-version = "0.1.2"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e0ce50098922b7519350860464d02959db7a2db6efd78047bca4ff92e48e7f49"
 dependencies = [
  "directories",
  "regex",
