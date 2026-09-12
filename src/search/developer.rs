@@ -7,7 +7,7 @@
 //! 前置页面状态：`execution::search_once` 刚进入搜索结果页，并把它当时的第一屏布局
 //! 作为 `result_page` 传进来，详情页流程结束后由调用方在该页面上继续收集应用列表。
 //! 因此这里既不负责打开搜索页，也不负责离开搜索结果页；异常中断时用
-//! `recover_to_result_page` 把界面拉回搜索结果页，避免后续步骤在未知页面上继续操作。
+//! `back_to_result_page` 把界面拉回搜索结果页，避免后续步骤在未知页面上继续操作。
 
 use anyhow::{Context, Result, anyhow};
 use hm_driver_rs::{Bounds, SwipeArea, SwipeDirection, UiNode};
@@ -44,7 +44,7 @@ impl SearchFlow {
     /// 布局快照，因此其中第一个应用卡片一定可见。
     ///
     /// 没有该区块的应用会直接返回 0，此时搜索结果页的返回按钮仍在，调用方可以继续
-    /// 收集结果列表；其余失败由调用方用 `recover_to_result_page` 恢复页面。
+    /// 收集结果列表；其余失败由调用方用 `back_to_result_page` 恢复页面。
     pub(crate) async fn collect_developer_apps(&mut self, result_page: &UiNode) -> Result<usize> {
         let entry = first_result_entry(result_page)
             .ok_or_else(|| anyhow!("搜索结果页没有应用卡片"))?;
@@ -165,31 +165,20 @@ impl SearchFlow {
         Ok(())
     }
 
-    /// 开发者列表页 -> 详情页 -> 搜索结果页。
+    /// 逐级后退，直到搜索结果页重新出现；正常收尾与意外中断都走这里。
     ///
-    /// 调用方只在进入开发者列表页之前失败时才会回到这里；此时后退两次会先回到搜索结果页，
-    /// 结果页通常忽略多余的后退，最后仍由 `wait_result_page` 确认位置。
-    async fn back_to_result_page(&self) -> Result<()> {
-        for step in 0..2 {
-            self.driver.go_back().await?;
-            sleep(BACK_SETTLE).await;
-            debug!(step, "从开发者应用流程返回上一级");
-        }
-        self.wait_result_page().await
-    }
-
-    /// 详情页流程意外中断时，把界面恢复到搜索结果页。
-    ///
-    /// 中断可能发生在详情页、开发者列表页或某个还没加载完的中间页，不知道需要后退几次，
-    /// 因此每轮先看当前树里有没有搜索结果页的返回按钮：已经回到就立刻结束，否则后退一次
-    /// 再判断，最多 `RECOVER_ATTEMPTS` 次，最后仍按搜索结果页继续等待并给出超时错误。
-    pub(crate) async fn recover_to_result_page(&self) -> Result<()> {
+    /// 调用点可能在详情页（没有「同开发者的应用」区块）或开发者列表页，两者需要后退的
+    /// 层数不同，所以不能按固定次数后退：每轮先看当前布局树里有没有搜索结果页的返回
+    /// 按钮，已经回到就结束，否则后退一次再判断，最多 `RECOVER_ATTEMPTS` 次；仍未回到
+    /// 时按搜索结果页继续等待，好让超时错误指出真实原因。
+    pub(crate) async fn back_to_result_page(&self) -> Result<()> {
         for attempt in 0..RECOVER_ATTEMPTS {
             let tree = self.driver.ui_tree().await?;
             if has_key(&tree, SEARCH_RESULT_BACK_KEY) {
+                debug!(attempt, "已回到搜索结果页");
                 return Ok(());
             }
-            debug!(attempt, "尝试恢复到搜索结果页");
+            debug!(attempt, "返回上一级");
             self.driver.go_back().await?;
             sleep(BACK_SETTLE).await;
         }

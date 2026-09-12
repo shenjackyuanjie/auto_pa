@@ -191,7 +191,7 @@ impl SearchFlow {
                 Err(error) => {
                     warn!(app = %app_name, error = %error, "同开发者应用收集失败");
                     // 收集过程中可能已经离开结果页，先恢复页面再继续统计结果列表。
-                    self.recover_to_result_page().await?;
+                    self.back_to_result_page().await?;
                 }
             }
         }
