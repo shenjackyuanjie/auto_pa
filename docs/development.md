@@ -2,7 +2,7 @@
 
 面向修改 `auto-pa-rs` 的开发者：常用命令、日志开关、真机调试手法、控件树分析方法、
 代码阅读顺序与常见坑。命令与结论均来自本仓库源码（`src/**`）与仓库内既有调试脚本
-（`.cache/dev/ui.ps1`、`.cache/dev/scroll_to_end.ps1`、`py/src/hdc.py`）；未确认的内容
+（`scripts/ui.ps1`、`scripts/scroll_to_end.ps1`、`py/src/hdc.py`）；未确认的内容
 见文末「待确认」。
 
 ## 1. 常用命令
@@ -57,7 +57,7 @@ Select-String -Path .\logs\search-rust.log.* -Pattern "搜索失败|超时|同�
 
 ## 3. 真机调试手法（hdc）
 
-以下命令与参数来自仓库内既有脚本 `.cache/dev/ui.ps1`（封装 dump/click/input/key/swipe
+以下命令与参数来自仓库内既有脚本 `scripts/ui.ps1`（封装 dump/click/input/key/swipe
 等动作）与 `py/src/hdc.py`。
 
 ### 3.1 设备与布局树
@@ -79,7 +79,7 @@ hdc shell "export T=$(uitest dumpLayout | cut -d ':' -f2-); cat $T; rm $T"
 ```powershell
 hdc shell uitest uiInput click 1560 400                 # 点击坐标
 hdc shell uitest uiInput inputText 1560 240 Facebook    # 在某坐标输入文本
-hdc shell uitest uiInput keyEvent 2                     # 2 = 返回，1 = Home（.cache/dev/ui.ps1）
+hdc shell uitest uiInput keyEvent 2                     # 2 = 返回，1 = Home（scripts/ui.ps1）
 hdc shell uitest uiInput swipe 1560 1500 1560 600 400   # 向上滑一屏（参数：x1 y1 x2 y2 时长ms）
 hdc shell uitest uiInput swipe 1560 600 1560 1500 400   # 向下滑一屏
 ```
@@ -100,18 +100,18 @@ hdc shell snapshot_display -f /data/local/tmp/shot.jpeg
 hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
 ```
 
-本仓库现有脚本中**没有**使用该命令（见「待确认」），需要时先自行确认当前 hdc 版本的
-参数名；`.cache/dev/` 中只留有历史截图文件。
+该命令已在 MatePad Edge（hdc 3.2.0e）上实测可用，输出形如
+`success: snapshot display 0 , write to ... as jpeg, width: 3120, height: 2080`。
 
 ### 3.5 既有封装脚本
 
-`.cache/dev/ui.ps1` 把常见动作做成 `动词:参数` 形式，可当参考实现：
+`scripts/ui.ps1` 把常见动作做成 `动词:参数` 形式，可当参考实现：
 
 ```powershell
-.\.cache\dev\ui.ps1 dump:home click:1560,400 input:1560,240,Facebook key:2 up back start shell:"pm list packages"
+.\scripts\ui.ps1 dump:home click:1560,400 input:1560,240,Facebook key:2 up back start shell:"pm list packages"
 ```
 
-`.cache/dev/scroll_to_end.ps1` 演示了「反复上滑 + dumpLayout + 统计 `app_name` 文本，
+`scripts/scroll_to_end.ps1` 演示了「反复上滑 + dumpLayout + 统计 `app_name` 文本，
 连续 2 轮无新增即到底」的验证手法，可用来独立复核 `collect_app_list` 的滚动逻辑。
 
 ## 4. 如何分析控件树
@@ -122,7 +122,7 @@ hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
 `clickable`、`bounds`。`bounds` 是 `[x1,y1][x2,y2]` 字符串（`py/src/utils.py::parse_bounds`），
 中心点即 `((x1+x2)/2, (y1+y2)/2)`，也是本项目点击时使用的坐标。
 
-`.cache/dev/ui.ps1` 的做法可直接复用：用正则 `\{"attributes":\{([^{}]*)\}` 抓属性块，只保留
+`scripts/ui.ps1` 的做法可直接复用：用正则 `\{"attributes":\{([^{}]*)\}` 抓属性块，只保留
 `key` 非空、`text` 非空或 `clickable == "true"` 的节点，按「bottom 再 left」排序，输出为
 `type|key|text|clickable|bounds` 的文本文件。这样每次 dump 都能直接和上一次对比位置变化。
 
@@ -187,12 +187,13 @@ hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
 
 ## 7. 待确认
 
-- `hdc shell snapshot_display -f ...` 截图方式未在本仓库脚本或源码中出现，参数名需按当前
-  hdc 版本自行验证（本仓库 dump 布局用的是 `uitest dumpLayout`）。
+- `hdc shell snapshot_display -f ...` 已在 MatePad Edge（hdc 3.2.0e）上验证可用，其它 hdc
+  版本或设备的参数名未验证（本仓库 dump 布局用的是 `uitest dumpLayout`）。
 - `hm_driver_rs` 内部实际下发的 hdc 命令（包括等待 UI 的轮询间隔与超时语义）不在本仓库，
   只能从 `wait_for_ui` / `wait_for_ui_tree` 的调用点推断。
 - 设备侧 uitest/Hypium agent 的版本与 `On.key` 支持情况只能从源码注释得知「部分 agent 未
   实现」，具体版本范围未知。
 - 平板分辨率与「平板/PC 布局」的判定没有写在 Rust 源码里；仓库内只有 `py/` 通过
   `SP_daemon -deviceinfo` 的 `activeMode` 动态获取主屏尺寸。
-- `.cache/dev/` 下的调试脚本与样本没有任何构建产物引用，是否长期保留由维护者决定。
+- `scripts/` 下的调试脚本不参与构建，只作为真机调试参考；里面的坐标按 3120x2080 横屏平板
+  写死，换设备时需要重新取坐标。

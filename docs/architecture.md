@@ -197,4 +197,4 @@ cargo run --release -- hilog --skip-categories 工具 游戏 --loop 2 --loop-wai
 - 平板分辨率与「平板/PC 布局」判断未在 Rust 源码中硬编码；仓库内仅 `py/` 通过
   `SP_daemon -deviceinfo` 的 `activeMode` 动态读取主屏尺寸。
 - `hilog` 的 hilog 抓取与投稿流程（`--submit`）尚未实现，架构上无对应模块。
-- `.cache/dev/` 下的调试脚本与样本未被源码或 `Cargo.toml` 引用，保留策略不明。
+- `scripts/` 下的真机调试脚本不被源码或 `Cargo.toml` 引用，仅供调试参考。
