@@ -88,13 +88,19 @@ search_once(name):
 结果页按 (top, left) 取第一个应用卡片 -> 点击 -> 等 key AppDetailPage (15s)
 逐屏下滑最多 DETAIL_SCROLL_MAX = 14 次，直到出现文本「同开发者的应用」
     前后两屏「全部非空文本排序去重拼接」签名相同 -> 判定到底，视为没有该区块，返回 0
-点区块标题同一行、位于标题右侧的最左可点击节点（该入口没有 key、没有 text）
-等列表页：key __NavdestinationField__Text__MainTitle__ 且 text == 同开发者的应用 (12s)
-collect_app_list(allow_empty=false) 划到底 -> add_apps -> 写进度 -> 返回两次 -> 等结果页 (12s)
+读区块内的应用卡片：标题下方的 app_name，范围止于包含标题的最小 ListItem 的底边
+    数量 < DEVELOPER_PREVIEW_LIMIT = 9 -> 区块没填满，就是全部应用，直接入库并返回一次
+    填满或读不到卡片 -> 点区块标题同一行、位于标题右侧的最左可点击节点（该入口没有 key、没有 text）
+        等列表页：key __NavdestinationField__Text__MainTitle__ 且 text == 同开发者的应用 (12s)
+        collect_app_list(allow_empty=false) 划到底 -> add_apps -> 写进度 -> 返回
+再逐级后退直到结果页返回按钮出现 -> 等结果页 (12s)
 ```
 
-异常时 `recover_to_result_page()`：最多 3 次尝试，树里存在 `SearchInputCard.Button.searchFrameBack`
-即认为已在结果页，否则 `go_back`。
+详情页区块一次最多渲染三行三列（实测 5 个应用的开发者只展示 5 个，73 个应用的开发者展示
+9 个满行），所以「没填满」可以安全地当作完整列表，省掉一次进列表页再退回的往返。
+
+异常时 `back_to_result_page()`：最多 3 次尝试，树里存在 `SearchInputCard.Button.searchFrameBack`
+即认为已在结果页，否则 `go_back`；正常收尾与中断恢复共用它。
 
 ### 4.4 hilog 主流程（`src/hilog/traversal.rs`）
 
@@ -146,7 +152,7 @@ collect_app_list(allow_empty=false) 划到底 -> add_apps -> 写进度 -> 返回
 | `__SearchField__search_box`、`__SearchField__Button__search_box` | key **前缀** | 搜索输入框、搜索按钮；后缀数字会变，必须前缀匹配 | 应用页搜索浮层 | `search/execution.rs` |
 | `SearchInputCard.Button.searchFrameBack` | key | 结果页返回按钮，同时是「结果页已打开」的唯一判据 | 搜索结果页 | `search/execution.rs`、`search/developer.rs` |
 | `AppDetailPage`、`__NavdestinationField__Text__MainTitle__` + text `同开发者的应用` | key（后者需 key + text） | 确认应用详情页已打开；开发者列表页靠主标题 key 与同名 text 同时命中来区分详情页里的同名区块 | 应用详情页 / 开发者应用列表页 | `search/developer.rs` |
-| 「更多」入口 | **无 key、无 text** | 按 `clickable == "true"`、垂直覆盖标题行中心、`left >= 标题右边界`，取其中最靠左者 | 详情页区块标题行右侧 | `search/developer.rs` |
+| 「更多」入口 | **无 key、无 text** | 按 `clickable == "true"`、垂直覆盖标题行中心、`left >= 标题右边界`，取 `left` 最大者（最靠右） | 详情页区块标题行右侧 | `search/developer.rs` |
 | `新鲜应用`；`新鲜应用`、`新鲜游戏`、`时下畅销应用`、`时下畅销游戏` | text | `--random` 模式下分类内入口；hilog 子分类入口（`SUBCATEGORY_NAMES`） | 分类页 | `search/collection.rs`、`hilog/traversal.rs` |
 | `精选`、`分类`、`排行榜`、`重磅更新`、`安装`、`打开`、`更新` | text | 分类按钮黑名单（`is_category_tab_or_action`） | 分类页 | `appgallery.rs` |
 | `type == "List"`、`type == "Button"`、`clickable == "true"` | 属性 | 列表容器（分类取「按钮最多」、应用取「应用最多」的 List）、分类按钮（需有非空 text 子树）、无 key 按钮兜底 | 分类页、列表页、详情页 | `appgallery.rs`、`search/developer.rs` |
@@ -161,7 +167,7 @@ collect_app_list(allow_empty=false) 划到底 -> add_apps -> 写进度 -> 返回
 | `APP_STOP_SETTLE` / `APP_START_SETTLE` / `PAGE_CLICK_SETTLE` / `CATEGORY_CLICK_SETTLE` / `CATEGORY_SCROLL_SETTLE` / `CATEGORY_CONTENT_TIMEOUT` | 1s / 3s / 750ms / 1s / 850ms / 5s | `search/flow.rs`、`hilog/traversal.rs` |
 | `BACK_SETTLE` / `DETAIL_SCROLL_SETTLE` / `SCROLL_BATCH_SIZE` / `SCROLL_WAIT` | 1500ms / 700ms / 2 / 100ms | `search/flow.rs`、`search/collection.rs` |
 | 搜索相关：`MAX_SEARCH_ATTEMPTS` / 输入等待 / `SEARCH_BUTTON_TIMEOUT` / 回车后探测 / `RESULT_LIST_TIMEOUT` | 3 / 200ms+300ms+100ms / 5s / 800ms / 6s | `search/execution.rs` |
-| `DETAIL_SCROLL_MAX` / `DETAIL_PAGE_TIMEOUT` / `DEVELOPER_LIST_TIMEOUT` / `RESULT_PAGE_TIMEOUT` / `RECOVER_ATTEMPTS` | 14 / 15s / 12s / 12s / 3 | `search/developer.rs` |
+| `DETAIL_SCROLL_MAX` / `DEVELOPER_PREVIEW_LIMIT` / `DETAIL_PAGE_TIMEOUT` / `DEVELOPER_LIST_TIMEOUT` / `RESULT_PAGE_TIMEOUT` / `RECOVER_ATTEMPTS` | 14 / 9 / 15s / 12s / 12s / 3 | `search/developer.rs` |
 | hilog 分类点击等待 | `1.0 + ping * 0.05` 秒（`--ping 15` 约 1.75 秒） | `hilog/traversal.rs` |
 
 滚动统一为 `swipe_direction(SwipeDirection::Up, SwipeArea::FullScreen, 0.7, 2_000)`。
