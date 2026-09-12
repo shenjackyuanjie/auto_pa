@@ -1,8 +1,9 @@
 //! 打开搜索结果里的第一个应用，收集「同开发者的应用」后原路返回。
 //!
-//! 平板上的应用详情页向下滚动会出现「同开发者的应用」区块，点区块右上角的「更多」
-//! 入口会进入同名列表页，列表页把该开发者的全部应用按三列网格纵向排列。整个流程
-//! 结束后必须回到搜索结果页，后续的搜索结果收集与「返回」才能继续。
+//! 平板上的应用详情页向下滚动会出现「同开发者的应用」区块，最多展示三行三列。区块没
+//! 填满时它就是该开发者的全部应用，直接读区块即可；填满时点区块右上角的「更多」入口
+//! 进入同名列表页，列表页把该开发者的全部应用按三列网格纵向排列。整个流程结束后必须
+//! 回到搜索结果页，后续的搜索结果收集与「返回」才能继续。
 //!
 //! 前置页面状态：`execution::search_once` 刚进入搜索结果页，并把它当时的第一屏布局
 //! 作为 `result_page` 传进来，详情页流程结束后由调用方在该页面上继续收集应用列表。
@@ -31,6 +32,10 @@ const DETAIL_PAGE_TIMEOUT: Duration = Duration::from_secs(15);
 const DEVELOPER_LIST_TIMEOUT: Duration = Duration::from_secs(12);
 const RESULT_PAGE_TIMEOUT: Duration = Duration::from_secs(12);
 const RECOVER_ATTEMPTS: usize = 3;
+/// 详情页区块一次最多展示三行三列；填满说明该开发者还有更多应用。
+const DEVELOPER_PREVIEW_LIMIT: usize = 9;
+/// 应用卡片名称节点在布局树里的 key。
+const APP_NAME_KEY: &str = "app_name";
 
 impl SearchFlow {
     /// 打开搜索结果里的第一个应用，收集它开发者的全部应用名并计入待搜索名称。
@@ -38,10 +43,11 @@ impl SearchFlow {
     /// 返回收集到的名称数量；详情页没有「同开发者的应用」区块时返回 0。无论成功
     /// 还是失败，调用方都应保证流程结束后停留在搜索结果页。
     ///
-    /// 步骤：点第一个应用卡片进入详情页、向下滚动找到「同开发者的应用」区块、
-    /// 点该区块标题行右侧的「更多」进入开发者应用列表页、读取列表里的名称并写入状态、
-    /// 再连点两次返回（列表页 -> 详情页 -> 搜索结果页）。`result_page` 是刚进入结果页时的
-    /// 布局快照，因此其中第一个应用卡片一定可见。
+    /// 步骤：点第一个应用卡片进入详情页、向下滚动找到「同开发者的应用」区块。区块一次
+    /// 最多展示三行三列，没填满时它就是该开发者的全部应用，直接读取并用一次后返回搜索
+    /// 结果页；填满或读不到卡片时才点标题行右侧的「更多」进入开发者应用列表页，划到底
+    /// 读取全部名称，再逐级返回搜索结果页。`result_page` 是刚进入结果页时的布局快照，
+    /// 因此其中第一个应用卡片一定可见。
     ///
     /// 没有该区块的应用会直接返回 0，此时搜索结果页的返回按钮仍在，调用方可以继续
     /// 收集结果列表；其余失败由调用方用 `back_to_result_page` 恢复页面。
@@ -58,8 +64,23 @@ impl SearchFlow {
             return Ok(0);
         }
 
-        // 滚动后重新取树，保证「更多」入口的位置来自当前布局。
+        // 滚动后重新取树，让区块内容与「更多」入口的位置都来自当前布局。
         let detail_page = self.driver.ui_tree().await?;
+        let preview = developer_section_apps(&detail_page);
+        if !preview.is_empty() && preview.len() < DEVELOPER_PREVIEW_LIMIT {
+            let added = self.state.add_apps(preview.iter().cloned());
+            self.store.save(&self.state)?;
+            info!(
+                app = %entry.name,
+                collected = preview.len(),
+                added,
+                total = self.state.app_count(),
+                "同开发者的应用不多，直接用详情页展示的名称"
+            );
+            self.back_to_result_page().await?;
+            return Ok(preview.len());
+        }
+
         self.click_developer_more(&detail_page).await?;
         let list_page = self
             .driver
@@ -198,6 +219,62 @@ impl SearchFlow {
     }
 }
 
+/// 读取「同开发者的应用」区块里已经展示出来的应用名。
+///
+/// 区块一次最多渲染三行三列，所以返回数量小于 `DEVELOPER_PREVIEW_LIMIT` 时它就是这个
+/// 开发者的全部应用，调用方不必再进列表页。页面上没有区块标题时返回空列表，交给调用方
+/// 走列表页那条更保守的路径。
+fn developer_section_apps(tree: &UiNode) -> Vec<String> {
+    let Some(title) = tree.find(|node| node.attribute_str("text") == Some(DEVELOPER_SECTION_TITLE))
+    else {
+        return Vec::new();
+    };
+    let Some(title_bounds) = title.bounds() else {
+        return Vec::new();
+    };
+    // 区块容器（ListItem）的底边就是下一块推荐的上边。
+    let section_bottom = section_container(tree, title_bounds).map_or(i32::MAX, |bounds| bounds.bottom);
+
+    let mut names = Vec::new();
+    for node in tree.find_all(|node| node.attribute_str("key") == Some(APP_NAME_KEY)) {
+        let Some(bounds) = node.bounds() else {
+            continue;
+        };
+        if bounds.top < title_bounds.bottom || bounds.top >= section_bottom {
+            continue;
+        }
+        let Some(text) = node.attribute_str("text") else {
+            continue;
+        };
+        if !text.is_empty() && !names.iter().any(|name| name == text) {
+            names.push(text.to_owned());
+        }
+    }
+    names
+}
+
+/// 找包含区块标题的最小 `ListItem`，用它把区块和下面的其它推荐分开。
+fn section_container(tree: &UiNode, title_bounds: Bounds) -> Option<Bounds> {
+    let mut best: Option<Bounds> = None;
+    for node in tree.find_all(|node| node.attribute_str("type") == Some("ListItem")) {
+        let Some(bounds) = node.bounds() else {
+            continue;
+        };
+        if bounds.top > title_bounds.top || bounds.bottom < title_bounds.bottom {
+            continue;
+        }
+        best = match best {
+            Some(current) if bounds_area(current) <= bounds_area(bounds) => Some(current),
+            _ => Some(bounds),
+        };
+    }
+    best
+}
+
+fn bounds_area(bounds: Bounds) -> i32 {
+    (bounds.right - bounds.left) * (bounds.bottom - bounds.top)
+}
+
 /// 结果页按先上后左的顺序取第一个应用卡片。
 ///
 /// `app_snapshot` 的返回顺序取决于布局树遍历顺序，三列网格下不保证第一个就是左上角，
@@ -249,6 +326,39 @@ fn page_signature(tree: &UiNode) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn 详情页区块只统计标题下方当前区块的应用() {
+        let tree: UiNode = serde_json::from_value(json!({
+            "attributes": {"type": "Root"},
+            "children": [
+                {"attributes": {"key": "app_name", "text": "标题上方", "bounds": "[100,900][200,930]"}, "children": []},
+                {"attributes": {"type": "ListItem", "bounds": "[0,940][3120,1320]"}, "children": [
+                    {"attributes": {"text": "同开发者的应用", "bounds": "[50,950][300,1000]"}, "children": []},
+                    {"attributes": {"key": "app_name", "text": "第一个", "bounds": "[100,1020][200,1050]"}, "children": []},
+                    {"attributes": {"key": "app_name", "text": "第二个", "bounds": "[1100,1020][1200,1050]"}, "children": []}
+                ]},
+                {"attributes": {"type": "ListItem", "bounds": "[0,1320][3120,1700]"}, "children": [
+                    {"attributes": {"text": "同分类的热门应用", "bounds": "[50,1330][300,1380]"}, "children": []},
+                    {"attributes": {"key": "app_name", "text": "别的区块", "bounds": "[100,1400][200,1430]"}, "children": []}
+                ]}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(developer_section_apps(&tree), vec!["第一个", "第二个"]);
+    }
+
+    #[test]
+    fn 没有同开发者区块时返回空列表() {
+        let tree: UiNode = serde_json::from_value(json!({
+            "attributes": {"type": "Root"},
+            "children": [
+                {"attributes": {"key": "app_name", "text": "推荐", "bounds": "[100,400][200,430]"}, "children": []}
+            ]
+        }))
+        .unwrap();
+        assert!(developer_section_apps(&tree).is_empty());
+    }
 
     #[test]
     fn 第一个搜索结果取最上最左的应用() {
