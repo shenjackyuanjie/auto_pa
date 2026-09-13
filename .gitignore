@@ -1,12 +1,7 @@
-﻿*.log
+*.log
 *.json
-try_get.py
-
-*__pycache__*
-.python-version
 .lh
 .cache
-.venv
 
 
 # Added by cargo
