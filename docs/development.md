@@ -158,10 +158,10 @@ hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
 3. `src/search/flow.rs`：`SearchFlow` 字段、主流程骨架、公共点击/滚动/等待辅助函数、
    全部时间常量。
 4. `src/search/state.rs`：进度文件格式与序列号清洗（含路径 `.random` 规则）。
-5. `src/search/collection.rs`：分类遍历与名称收集（含 `--random` 分支）。
+5. `src/search/collection.rs`：分类遍历与名称收集（默认 3 屏／`--random` 新鲜应用／`--deep` 子分类滑到底三条路径，等待统一降级）。
 6. `src/search/execution.rs`：搜索输入、提交方式、结果页判定、重试。
 7. `src/search/developer.rs`：详情页区块滚动、无 key 按钮定位、原路返回与恢复。
-8. `src/appgallery.rs`：控件树解析规则（分类按钮、应用卡片、文本黑名单）。
+8. `src/appgallery.rs`：控件树解析规则（分类按钮、应用卡片、子分类入口、文本黑名单）。
 9. `src/command/hilog.rs` + `src/hilog/traversal.rs`：另一条命令线的遍历与容错策略。
 10. `src/logging.rs`：日志落地细节。
 

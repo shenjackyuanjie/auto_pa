@@ -20,7 +20,7 @@
 
 | 子命令 | 作用 | 主要参数 |
 | --- | --- | --- |
-| `search` | 遍历「应用」「游戏」分类收集应用名 → 逐个搜索 → 从搜索结果第一个应用进入详情页收集「同开发者的应用」→ 刷新分类后再搜新增名称 | `--fresh`、`--random`、`--skip-developer`、`-v/--verbose`、`--disable-log-file`、`--hdc-path <路径>` |
+| `search` | 遍历「应用」「游戏」分类收集应用名 → 逐个搜索 → 从搜索结果第一个应用进入详情页收集「同开发者的应用」→ 刷新分类后再搜新增名称 | `--fresh`、`--random`、`--deep`、`--skip-developer`、`-v/--verbose`、`--disable-log-file`、`--hdc-path <路径>` |
 | `hilog` | 遍历分类与应用列表；默认不抓 hilog、不投稿 | `-v/--verbose`、`--disable-log-file`、`--hdc-path <路径>`、`--skip-categories <分类>...`、`--loop <次数>`（默认 1）、`--loop-wait <时长>`（默认 `5m`）、`--ping <数值>`（默认 15）、`--keep-open-on-error`、`--submit`、`--username <名称>` |
 
 `hilog` 的参数约束（`src/command/hilog.rs`）：`--loop` 必须大于 0；`--username` 只能与 `--submit`
@@ -63,9 +63,13 @@ scripts/                   真机 UI 调试脚本（dumpLayout、点击、滑动
   走 `click_app_or_game` → `click_categories_tab` → `pull_categories`；后者最多
   `MAX_CATEGORY_SCROLLS = 100` 轮，连续 2 轮无新分类按钮即到底，超过上限报
   「分类列表超过 [100] 次仍未到底」。
-- 进入分类后：`--random` 时先在 5 秒内等待文本 `新鲜应用` 并点击；普通模式直接等待应用列表并
-  读 3 屏（`0..=2`），每屏向上滑一次；最后 `back_to_categories(1)`（`--random` 为 2 次）并
-  保存该分类新增名称。
+- 进入分类后按深度分三条路径：默认直接等待应用列表并读 3 屏（`0..=2`），每屏向上滑一次；
+  `--random` 时先在 5 秒内等待文本 `新鲜应用`、点进去再读 3 屏；`--deep` 则等分类页内容，
+  出现 `SUBCATEGORY_NAMES`（新鲜应用/新鲜游戏/时下畅销应用/时下畅销游戏）里的入口就逐个进入、
+  每个列表由 `collect_app_list` 滑到底，否则把分类首页自己滑到底。三条路径最后都用
+  `back_to_categories`（默认 1 次、`--random` 2 次）回到分类列表，再保存该分类新增名称。
+- 爬取阶段的等待全部降级：等子分类/应用列表超时只记 warning 并按当前 UI 继续，空页面结束
+  当前层级；只有找不到分类按钮、超过滚动上限这类结构性异常才报错（与 `hilog` 一致）。
 - 名称去重与累积由 `SearchState::add_apps` 完成（空名不入库，返回新增条数）；首轮失败的名称不会
   被 `mark_searched`，因此下一轮会重试。
 
@@ -107,11 +111,14 @@ search_once(name):
 
 ### 4.4 hilog 主流程（`src/hilog/traversal.rs`）
 
-`UiTraversal::run` 启动 AppGallery 后固定遍历 `["应用", "游戏"]`，没有 `--random` 分支；分类页内
-存在 `SUBCATEGORY_NAMES` 子分类入口时逐个进入并划到底，否则直接遍历当前应用列表，
+`UiTraversal::run` 启动 AppGallery 后固定遍历 `["应用", "游戏"]`，没有 `--random` / `--deep` 分支；
+分类页内存在 `SUBCATEGORY_NAMES` 子分类入口时逐个进入并划到底，否则直接遍历当前应用列表，
 `--skip-categories` 命中的分类只记日志并跳过。`wait_for_category_content` / `wait_for_app_list`
 超时只记 warning 并退化为当前 UI（空内容跳过该分类），只有「找不到分类按钮」「滚动超过上限」这类
 结构性失败才报错；`--keep-open-on-error` 在失败时保留 AppGallery 现场（仅关闭 HmDriver）。
+
+`search --deep` 复用的是同一套深度与容错：进入分类后的子分类识别、滑动到底与等待降级都与本节
+描述一致，区别只在 `search` 会把读到的名称并入进度。
 
 ## 5. 进度文件
 
@@ -156,11 +163,11 @@ search_once(name):
 | `SearchInputCard.Button.searchFrameBack` | key | 结果页返回按钮，同时是「结果页已打开」的唯一判据 | 搜索结果页 | `search/execution.rs`、`search/developer.rs` |
 | `AppDetailPage`、`__NavdestinationField__Text__MainTitle__` + text `同开发者的应用` | key（后者需 key + text） | 确认应用详情页已打开；开发者列表页靠主标题 key 与同名 text 同时命中来区分详情页里的同名区块 | 应用详情页 / 开发者应用列表页 | `search/developer.rs` |
 | 「更多」入口 | **无 key、无 text** | 按 `clickable == "true"`、垂直覆盖标题行中心、`left >= 标题右边界`，取 `left` 最大者（最靠右） | 详情页区块标题行右侧 | `search/developer.rs` |
-| `新鲜应用`；`新鲜应用`、`新鲜游戏`、`时下畅销应用`、`时下畅销游戏` | text | `--random` 模式下分类内入口；hilog 子分类入口（`SUBCATEGORY_NAMES`） | 分类页 | `search/collection.rs`、`hilog/traversal.rs` |
+| `新鲜应用`；`新鲜应用`、`新鲜游戏`、`时下畅销应用`、`时下畅销游戏` | text | `--random` 模式下分类内入口；`--deep` 与 hilog 的子分类入口（`SUBCATEGORY_NAMES`） | 分类页 | `search/collection.rs`、`appgallery.rs` |
 | `精选`、`分类`、`排行榜`、`重磅更新`、`安装`、`打开`、`更新` | text | 分类按钮黑名单（`is_category_tab_or_action`） | 分类页 | `appgallery.rs` |
 | `type == "List"`、`type == "Button"`、`clickable == "true"` | 属性 | 列表容器（分类取「按钮最多」、应用取「应用最多」的 List）、分类按钮（需有非空 text 子树）、无 key 按钮兜底 | 分类页、列表页、详情页 | `appgallery.rs`、`search/developer.rs` |
 
-`hilog/traversal.rs` 单测记录：实机新版 AppGallery 子分类入口层级为 `clickable Column -> Row -> Text`，`Row`/`Text` 自身不是 `Button`，因此子分类按 text 找 clickable 祖先而非要求 `Button` 类型。
+`appgallery.rs` 单测记录：实机新版 AppGallery 子分类入口层级为 `clickable Column -> Row -> Text`，`Row`/`Text` 自身不是 `Button`，因此子分类按 text 找 clickable 祖先而非要求 `Button` 类型（`--deep` 与 hilog 共用这份识别）。
 
 ## 8. 关键常量与超时
 

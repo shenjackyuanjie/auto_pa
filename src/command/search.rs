@@ -33,6 +33,17 @@ pub struct SearchArgs {
     #[arg(long)]
     random: bool,
 
+    /// 按 hilog 的深度遍历分类：进入分类后逐个走子分类入口，并把应用列表滑到底。
+    ///
+    /// 默认（不加该开关）只读分类首页固定 3 屏。打开后走「新鲜应用/新鲜游戏/时下畅销应用/
+    /// 时下畅销游戏」子分类页，每个列表滑到底，深度与 `hilog` 子命令一致。与 `--random`
+    /// 独立：`--random` 决定页签范围与搜索顺序，爬取深度由本开关决定。
+    ///
+    /// 只影响真正执行的遍历：进度里已有 `collection_complete` 时会跳过初始遍历，配 `--fresh`
+    /// 才会重爬。
+    #[arg(long)]
+    deep: bool,
+
     /// 跳过「打开搜索结果里的第一个应用，收集同开发者的应用」这一步。
     ///
     /// 对应 `run_device` 的 `developer_scan` 参数：关掉之后只验证搜索是否有结果，
@@ -103,6 +114,7 @@ pub async fn run(cli: SearchArgs) -> Result<()> {
             hdc_config.clone(),
             cli.fresh,
             cli.random,
+            cli.deep,
             !cli.skip_developer,
         ));
     }
@@ -124,5 +136,33 @@ pub async fn run(cli: SearchArgs) -> Result<()> {
             failures.len(),
             failures.join(" | ")
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    /// 只为了让 `SearchArgs` 能被单独解析。
+    #[derive(Debug, Parser)]
+    struct TestCli {
+        #[command(flatten)]
+        args: SearchArgs,
+    }
+
+    /// `--deep` 是可选开关，默认必须保持关闭（默认仍是「只读分类首页 3 屏」）。
+    #[test]
+    fn deep_默认关闭() {
+        let cli = TestCli::parse_from(["test"]);
+        assert!(!cli.args.deep);
+        assert!(!cli.args.random);
+    }
+
+    #[test]
+    fn deep_与_random_可以同时打开() {
+        let cli = TestCli::parse_from(["test", "--deep", "--random"]);
+        assert!(cli.args.deep);
+        assert!(cli.args.random);
     }
 }

@@ -56,6 +56,9 @@ pub struct SearchFlow {
     /// `--random`：只走「应用」页签并收集每个分类的「新鲜应用」子页面，搜索顺序随机打乱，
     /// 进度文件也会带 `.random` 后缀与默认模式区分开。
     pub(crate) random_mode: bool,
+    /// `--deep`：进入分类后按 `hilog` 的深度爬——有子分类入口就逐个进去，列表滑到底，
+    /// 而不是只读固定 3 屏。
+    pub(crate) deep_mode: bool,
     /// 是否执行「打开第一个搜索结果、收集同开发者应用」这一步（`--skip-developer` 时关闭）。
     pub(crate) developer_scan: bool,
     /// AppGallery 的应用标识，用于启停应用。
@@ -73,6 +76,7 @@ impl SearchFlow {
         state: SearchState,
         store: SearchStateStore,
         random_mode: bool,
+        deep_mode: bool,
         developer_scan: bool,
         device_label: String,
     ) -> Result<Self> {
@@ -81,6 +85,7 @@ impl SearchFlow {
             state,
             store,
             random_mode,
+            deep_mode,
             developer_scan,
             bundle: AppIdentifier::new(APPGALLERY_BUNDLE)?,
             home_ready: false,
@@ -314,6 +319,7 @@ pub async fn run_device(
     hdc_config: HdcConfig,
     fresh: bool,
     random_mode: bool,
+    deep_mode: bool,
     developer_scan: bool,
 ) -> Result<()> {
     let device_label = format!("device-{index}");
@@ -344,6 +350,7 @@ pub async fn run_device(
         state,
         store,
         random_mode,
+        deep_mode,
         developer_scan,
         device_label.clone(),
     )?;
