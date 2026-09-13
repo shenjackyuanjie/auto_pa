@@ -88,6 +88,8 @@ pub struct HilogArgs {
 /// `keep_open_on_error` 为真且遍历失败时保留 AppGallery 现场（即 `shutdown(false)`），
 /// 否则照常关闭应用；HDC 连接始终关闭。返回值以遍历错误为主，若清理也失败则把它
 /// 作为上下文附加到同一个错误上，避免清理错误掩盖真正的失败原因。
+///
+/// 设备标签挂在错误链最外层，汇总时只靠错误本身就能指出是哪台设备失败的。
 async fn run_device(
     index: usize,
     serial: String,
@@ -101,7 +103,7 @@ async fn run_device(
         .hdc_config(hdc_config)
         .connect()
         .await
-        .context("连接 HmDriver 失败")?;
+        .with_context(|| format!("[{device_label}] 连接 HmDriver 失败"))?;
     let config = UiTraversalConfig::new(cli.skip_categories.clone(), cli.ping);
     let mut flow = UiTraversal::new(driver, config, device_label.clone())?;
     let run_result = flow.run().await;
@@ -110,12 +112,13 @@ async fn run_device(
         .shutdown(!(run_result.is_err() && cli.keep_open_on_error))
         .await;
 
-    match (run_result, cleanup_result) {
+    let outcome = match (run_result, cleanup_result) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) => Err(error),
         (Ok(()), Err(error)) => Err(error),
         (Err(error), Err(cleanup)) => Err(error.context(format!("同时清理失败：{cleanup}"))),
-    }
+    };
+    outcome.with_context(|| format!("[{device_label}]"))
 }
 
 /// 执行一轮遍历：每轮都重新发现设备，再在所有在线设备上并行遍历。
@@ -150,7 +153,12 @@ async fn run_round(cli: &HilogArgs, hdc_config: &HdcConfig) -> Result<()> {
     while let Some(result) = tasks.join_next().await {
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => failures.push(error.to_string()),
+            Ok(Err(error)) => {
+                // `{:?}` 就是 anyhow 的 `Caused by:` 排版，设备执行失败的原因会整条展开。
+                let reason = format!("{error:?}");
+                error!(error = %reason, "设备执行失败");
+                failures.push(reason);
+            }
             Err(error) => failures.push(format!("设备任务异常：{error}")),
         }
     }
@@ -201,7 +209,7 @@ pub async fn run(cli: HilogArgs) -> Result<()> {
         match run_round(&cli, &hdc_config).await {
             Ok(()) => last_error = None,
             Err(error) => {
-                error!(round = round + 1, error = %error, "UI 遍历轮次失败");
+                error!(round = round + 1, error = ?error, "UI 遍历轮次失败");
                 last_error = Some(error);
             }
         }

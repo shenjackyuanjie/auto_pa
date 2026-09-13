@@ -19,6 +19,7 @@ use tracing::{info, warn};
 use crate::appgallery::{
     APPGALLERY_ABILITY, APPGALLERY_BUNDLE, CategoryButton, app_snapshot, category_buttons,
 };
+use crate::logging::error_chain;
 
 /// 单个应用列表允许的最大下滑次数，超过即视为结构性失败。
 const MAX_SCROLLS: usize = 100;
@@ -93,13 +94,13 @@ impl UiTraversal {
         if close_app {
             info!(device = %self.device_label, "关闭 AppGallery");
             if let Err(error) = self.driver.stop_app(&self.bundle).await {
-                failures.push(format!("关闭 AppGallery 失败：{error}"));
+                failures.push(format!("关闭 AppGallery 失败：{}", error_chain(&error)));
             }
         } else {
             info!(device = %self.device_label, "保留 AppGallery 现场");
         }
         if let Err(error) = self.driver.close().await {
-            failures.push(format!("关闭 HmDriver 失败：{error}"));
+            failures.push(format!("关闭 HmDriver 失败：{}", error_chain(&error)));
         }
         if failures.is_empty() {
             Ok(())
@@ -114,7 +115,11 @@ impl UiTraversal {
     async fn start_appgallery(&mut self) -> Result<()> {
         info!(device = %self.device_label, "正在关闭 AppGallery");
         if let Err(error) = self.driver.stop_app(&self.bundle).await {
-            warn!(device = %self.device_label, error = %error, "关闭 AppGallery 时出现警告");
+            warn!(
+                device = %self.device_label,
+                error = %error_chain(&error),
+                "关闭 AppGallery 时出现警告"
+            );
         }
         sleep(APP_STOP_SETTLE).await;
 
@@ -389,7 +394,7 @@ impl UiTraversal {
             Err(error) => {
                 warn!(
                     device = %self.device_label,
-                    error = %error,
+                    error = %error_chain(&error),
                     "等待分类内容超时，按空内容继续"
                 );
                 self.driver
@@ -412,7 +417,7 @@ impl UiTraversal {
                 warn!(
                     device = %self.device_label,
                     category,
-                    error = %error,
+                    error = %error_chain(&error),
                     "等待应用列表超时，按空列表继续"
                 );
                 self.driver
