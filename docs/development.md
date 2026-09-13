@@ -2,7 +2,7 @@
 
 面向修改 `auto-pa-rs` 的开发者：常用命令、日志开关、真机调试手法、控件树分析方法、
 代码阅读顺序与常见坑。命令与结论均来自本仓库源码（`src/**`）与仓库内既有调试脚本
-（`scripts/ui.ps1`、`scripts/scroll_to_end.ps1`、`py/src/hdc.py`）；未确认的内容
+（`scripts/ui.ps1`、`scripts/scroll_to_end.ps1`）；未确认的内容
 见文末「待确认」。
 
 ## 1. 常用命令
@@ -57,18 +57,18 @@ Select-String -Path .\logs\search-rust.log.* -Pattern "搜索失败|超时|同�
 
 ## 3. 真机调试手法（hdc）
 
-以下命令与参数来自仓库内既有脚本 `scripts/ui.ps1`（封装 dump/click/input/key/swipe
-等动作）与 `py/src/hdc.py`。
+以下命令与参数来自仓库内脚本 `scripts/ui.ps1`（封装 dump/click/input/key/swipe
+等动作）。
 
 ### 3.1 设备与布局树
 
 ```powershell
-hdc list targets -v                                   # 列出设备（py/src/hdc.py refresh_targets）
+hdc list targets -v                                   # 列出设备
 hdc shell uitest dumpLayout -p /data/local/tmp/home.json
 hdc file recv /data/local/tmp/home.json .\tmp\home.json
 ```
 
-`py/src/hdc.py` 里的另一种取法是不落盘，直接从 stdout 拿路径：
+另一种取法是不落盘，直接从 stdout 拿路径：
 
 ```powershell
 hdc shell "export T=$(uitest dumpLayout | cut -d ':' -f2-); cat $T; rm $T"
@@ -119,7 +119,7 @@ hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
 ### 4.1 提取关键字段
 
 布局 JSON 的属性节点形如 `{"attributes":{...}}`，属性包含 `type`、`key`、`text`、
-`clickable`、`bounds`。`bounds` 是 `[x1,y1][x2,y2]` 字符串（`py/src/utils.py::parse_bounds`），
+`clickable`、`bounds`。`bounds` 是 `[x1,y1][x2,y2]` 字符串，
 中心点即 `((x1+x2)/2, (y1+y2)/2)`，也是本项目点击时使用的坐标。
 
 `scripts/ui.ps1` 的做法可直接复用：用正则 `\{"attributes":\{([^{}]*)\}` 抓属性块，只保留
@@ -134,11 +134,12 @@ hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
    （单测里出现的实例是 `__SearchField__search_box2`）。
 3. **按 text 匹配**：`分类`、`应用`、`游戏`、`新鲜应用`、`同开发者的应用` 等。
 4. **按属性组合推导**：文本节点本身不可点击时，向上找 `clickable == "true"` 的祖先节点
-   （`py/src/utils.py` 注释说明 HarmonyOS 的 clickable 容器常常比标签高好几层；本项目在
+   （HarmonyOS 的 clickable 容器常常比标签高好几层；本项目在
    `click_local` 中用 `find_click_target` 取这类点击目标）。
 5. **纯几何推导**：完全没有 key/text 的按钮，用相对位置描述。`src/search/developer.rs`
    定位「同开发者的应用」右侧「更多」入口就是例子：候选必须 `clickable == "true"`、
-   `bounds.left >= 标题.right`、`bounds.top <= 标题中心行 y <= bounds.bottom`，再取其中最靠左者。
+   `bounds.left >= 标题.right`、`bounds.top <= 标题中心行 y <= bounds.bottom`，再取其中
+   `left` 最大者（最靠右）。
 
 ### 4.3 判断页面身份
 
@@ -194,7 +195,7 @@ hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
   只能从 `wait_for_ui` / `wait_for_ui_tree` 的调用点推断。
 - 设备侧 uitest/Hypium agent 的版本与 `On.key` 支持情况只能从源码注释得知「部分 agent 未
   实现」，具体版本范围未知。
-- 平板分辨率与「平板/PC 布局」的判定没有写在 Rust 源码里；仓库内只有 `py/` 通过
-  `SP_daemon -deviceinfo` 的 `activeMode` 动态获取主屏尺寸。
+- 平板分辨率与「平板/PC 布局」的判定没有写在 Rust 源码里：Rust 侧只按控件树的 key/bounds
+  匹配，不读取 `SP_daemon -deviceinfo` 的 `activeMode` 主屏尺寸。
 - `scripts/` 下的调试脚本不参与构建，只作为真机调试参考；里面的坐标按 3120x2080 横屏平板
   写死，换设备时需要重新取坐标。

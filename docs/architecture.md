@@ -6,8 +6,9 @@
 
 ## 1. 工具定位
 
-把原先的 Python 版 AppGallery 自动化工具重写为 Rust 实现：Python 版本（根目录 `main.py`、
-`search.py`、`auto_pa.py` 与 `py/`）已废弃，仅作参考保留；Rust 版本通过 `hm_driver_rs`
+本工具是原 Python 版 AppGallery 自动化工具的 Rust 重写：Python 版本（根目录 `main.py`、
+`search.py`、`auto_pa.py` 与 `py/`）已删除，需要查阅时用 `git show <commit>:<路径>` 从历史
+里取。Rust 版本通过 `hm_driver_rs`
 （内部依赖 hdc 与 uitest agent）操作华为平板上的 AppGallery。
 包名 `auto-pa-rs`，二进制名 `auto-pa`，`edition = "2024"`，`publish = false`，描述为
 `AppGallery UI search automation`；入口只有 `src/main.rs`，用 clap 定义两个子命令
@@ -41,7 +42,7 @@ src/search/execution.rs    逐个名称搜索、提交方式判定、结果页�
 src/search/developer.rs    打开结果页第一个应用、收集「同开发者的应用」并原路返回
 src/search/state.rs        进度文件读写（SearchState / SearchStateStore）、序列号清洗
 src/hilog/traversal.rs     分类/子分类/应用列表遍历，容错式等待；mod.rs 负责导出
-py/ 与根目录 *.py          已废弃的 Python 版本及其入口；.cache/、logs/ 为运行期产物
+scripts/                   真机 UI 调试脚本（dumpLayout、点击、滑动、返回）；.cache/、logs/ 为运行期产物
 ```
 
 ## 4. 整体数据流
@@ -200,7 +201,9 @@ cargo run --release -- hilog --skip-categories 工具 游戏 --loop 2 --loop-wai
 - `hm_driver_rs` 内部下发的 hdc / uitest 命令与 agent 生命周期不在本仓库，只能从调用点推断（`wait_for_ui`、
   `wait_for_ui_tree`、`ui_tree`、`click`、`input_text`、`press_key_code`、`swipe_direction`、`go_back`、
   `start_app`、`stop_app`、`wait_for_app`、`discover_devices`）。
-- 平板分辨率与「平板/PC 布局」判断未在 Rust 源码中硬编码；仓库内仅 `py/` 通过
-  `SP_daemon -deviceinfo` 的 `activeMode` 动态读取主屏尺寸。
-- `hilog` 的 hilog 抓取与投稿流程（`--submit`）尚未实现，架构上无对应模块。
+- 平板分辨率与「平板/PC 布局」判断未在 Rust 源码中硬编码：Rust 侧只按控件树的 key/bounds
+  匹配，不读取 `SP_daemon -deviceinfo` 的 `activeMode` 主屏尺寸。
+- `hilog` 的 hilog 抓取与投稿流程（`--submit`）尚未实现，架构上无对应模块。被删除的
+  Python 实现里曾有完整的投稿链路（`py/src/hmgallery.py` 的后端 HTTP 客户端、`auto_pa.py`
+  的分享面板操作、`py/core/hilog.py` 的 hilog 解析与投稿），后续要用 `git show` 取回。
 - `scripts/` 下的真机调试脚本不被源码或 `Cargo.toml` 引用，仅供调试参考。

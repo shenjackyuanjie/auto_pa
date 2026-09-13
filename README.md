@@ -4,25 +4,26 @@
 
 </div>
 
-Rust 版本只有一个入口，使用 `search` 和 `hilog` 子命令：
+AppGallery 自动化工具，只有一个 Rust 入口，使用 `search` 和 `hilog` 子命令：
 
 ```powershell
 cargo run --release -- <子命令> [参数]
 ```
 
-Python 版本（`auto_pa.py`、`main.py`、`search.py` 与 `py/`）已经废弃，不再维护，
-也不会同步新功能，请统一使用 Rust 入口。
+早先的 Python 实现（`main.py`、`search.py`、`auto_pa.py` 与 `py/`）已经删除，需要查阅旧
+代码时用 `git show <commit>:<路径>` 从历史里取。
 
 ## 目录结构
 
 ```text
-src/                              Rust 源码
-docs/                             架构与开发文档
-auto_pa.py / main.py / search.py  已废弃的 Python 入口
-py/                               已废弃的 Python 业务流程与运行时
+src/        Rust 源码
+docs/       架构与开发文档
+scripts/    真机 UI 调试脚本
+.cache/     每台设备的搜索进度（运行期生成）
+logs/       日志（运行期生成）
 ```
 
-## Rust UI 搜索
+## UI 搜索
 
 基于 `hm_driver_rs` 实现的 AppGallery UI 搜索流程：
 
@@ -70,10 +71,9 @@ Rust 默认输出 `INFO` 日志到终端和
 详情页没有这个区块（例如开发者没有其他上架应用）时跳过当前应用；偶发失败只记录警告并
 恢复搜索结果页，不会让本次搜索失败。使用 `--skip-developer` 可以完全关闭这一步。
 
-## Rust UI 分类遍历
+## UI 分类遍历
 
-`hilog` 子命令实现了 Python 命令
-`uv run .\main.py hilog --no-submit` 的纯 UI 部分。它会在每台在线设备上启动
+`hilog` 子命令只做 UI 遍历：它会在每台在线设备上启动
 AppGallery，遍历「应用」和「游戏」的分类页面，并将每个应用列表下滑至稳定。
 默认不抓取 hilog，也不提交应用：
 
@@ -87,5 +87,6 @@ cargo run --release -- hilog
 不完整的投稿流程。
 
 偶发情况（等待分类内容或应用列表超时、当前页面没有应用卡片）只记录 warning 并跳过
-当前分类，不会让整台设备失败，这与 Python `hilog --no-submit` 的容错行为一致。
-只有结构性失败（找不到分类列表、滚动次数超过上限）仍会报错。
+当前分类，不会让整台设备失败。只有结构性失败（找不到分类列表、滚动次数超过上限）
+仍会报错。
+
