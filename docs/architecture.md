@@ -10,7 +10,9 @@
 `search.py`、`auto_pa.py` 与 `py/`）已删除，需要查阅时用 `git show <commit>:<路径>` 从历史
 里取。Rust 版本通过 `hm_driver_rs`
 （内部依赖 hdc 与 uitest agent）操作华为平板上的 AppGallery。
-包名 `auto-pa-rs`，二进制名 `auto-pa`，`edition = "2024"`，`publish = false`，描述为
+包名 `auto-pa-rs`，二进制名 `auto-pa`（由 `Cargo.toml` 里的 `[[bin]] name = "auto-pa"`
+显式声明，产物是 `target/{debug,release}/auto-pa.exe`；不写这一段的话产物会跟着包名叫
+`auto-pa-rs.exe`），`edition = "2024"`，`publish = false`，描述为
 `AppGallery UI search automation`；入口只有 `src/main.rs`，用 clap 定义两个子命令
 （`#[command(name = "auto-pa", about = "AppGallery 自动化工具")]`）。
 
