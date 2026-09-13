@@ -1,7 +1,7 @@
 //! `hilog` 子命令的纯 UI 流程：在每台在线设备上启动 AppGallery，遍历「应用」和
 //! 「游戏」的分类页面，并把每个应用列表下滑至稳定。
 //!
-//! 它是 Python 命令 `uv run .\main.py hilog --no-submit` 的 UI 部分。当前版本不抓取
+//! 它只做 UI 遍历：当前版本不抓取
 //! hilog、也不提交应用，`--submit` 会被 `command::hilog::run` 直接拒绝，避免悄悄执行
 //! 不完整的投稿流程。
 //!

@@ -57,9 +57,9 @@ pub struct HilogArgs {
     #[arg(long, default_value = "5m", value_parser = parse_duration)]
     loop_wait: Duration,
 
-    /// 与 Python 实现一致的 UI 等待参数；15 表示约 1.75 秒。
+    /// UI 等待参数；15 表示约 1.75 秒。
     ///
-    /// 实际换算成分类点击后的固定等待 `1.0 + ping * 0.05` 秒，用于对齐原 Python 脚本的节奏。
+    /// 实际换算成分类点击后的固定等待 `1.0 + ping * 0.05` 秒。
     #[arg(long, default_value_t = 15)]
     ping: u64,
 

@@ -3,7 +3,7 @@
 //!
 //! 这里不保存任何结果，应用名称只用于判断列表是否还有新内容。
 //!
-//! 容错策略与 Python `hilog --no-submit` 对齐，偶发问题不升级为设备失败：
+//! 容错策略：偶发问题不升级为设备失败，
 //!
 //! - 等待分类内容或应用列表超时只记 warning，退化为当前 UI，由调用方按空内容跳过；
 //! - 当前页面没有应用卡片时同样只记 warning，结束该列表的读取并返回已收集数量；
@@ -45,7 +45,7 @@ pub struct UiTraversalConfig {
 impl UiTraversalConfig {
     /// 由 `--skip-categories` 和 `--ping` 构造参数。
     ///
-    /// `ping` 沿用 Python 的换算：每 1 点约 0.05 秒，默认 15 对应约 1.75 秒的分类点击
+    /// `ping` 的换算：每 1 点约 0.05 秒，默认 15 对应约 1.75 秒的分类点击
     /// 等待。
     pub fn new(skip_categories: Vec<String>, ping: u64) -> Self {
         Self {
@@ -333,7 +333,7 @@ impl UiTraversal {
         for _ in 0..MAX_SCROLLS {
             let snapshot = app_snapshot(&tree);
             if snapshot.is_empty() {
-                // Python 实现在这里直接结束本轮读取；偶发空帧不应该让整台设备失败。
+                // 偶发空帧不应该让整台设备失败，直接结束本轮读取。
                 warn!(
                     device = %self.device_label,
                     category,
@@ -347,7 +347,7 @@ impl UiTraversal {
                 return Ok(seen_names.len());
             }
 
-            // Python 的 no-submit 流程每轮下滑两次；这里保留同样的遍历节奏。
+            // 每轮下滑两次，保持已有的遍历节奏。
             for _ in 0..2 {
                 self.scroll_up().await?;
                 sleep(LIST_SCROLL_SETTLE).await;
@@ -400,7 +400,7 @@ impl UiTraversal {
         }
     }
 
-    /// 等待应用列表；超时只记录警告并退化为当前 UI，让空列表按 Python 的行为被跳过。
+    /// 等待应用列表；超时只记录警告并退化为当前 UI，让空列表被调用方跳过。
     async fn wait_for_app_list(&self, timeout: Duration, category: &str) -> Result<UiNode> {
         match self
             .driver
