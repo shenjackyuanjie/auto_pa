@@ -5,6 +5,12 @@ edition = "2024"
 publish = false
 description = "AppGallery UI search automation"
 
+# 显式声明二进制目标：包名是 auto-pa-rs，但对外只暴露 `auto-pa` 这个名字，与
+# `#[command(name = "auto-pa")]`、README 和 docs/ 里的说法保持一致。
+[[bin]]
+name = "auto-pa"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", default-features = false, features = ["derive", "std", "help", "usage", "error-context"] }
