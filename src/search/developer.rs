@@ -52,8 +52,8 @@ impl SearchFlow {
     /// 没有该区块的应用会直接返回 0，此时搜索结果页的返回按钮仍在，调用方可以继续
     /// 收集结果列表；其余失败由调用方用 `back_to_result_page` 恢复页面。
     pub(crate) async fn collect_developer_apps(&mut self, result_page: &UiNode) -> Result<usize> {
-        let entry = first_result_entry(result_page)
-            .ok_or_else(|| anyhow!("搜索结果页没有应用卡片"))?;
+        let entry =
+            first_result_entry(result_page).ok_or_else(|| anyhow!("搜索结果页没有应用卡片"))?;
         info!(app = %entry.name, "打开搜索结果里的第一个应用");
         self.driver.click(entry.bounds.center()).await?;
         self.wait_detail_page().await?;
@@ -175,7 +175,8 @@ impl SearchFlow {
             };
         }
 
-        let bounds = target.ok_or_else(|| anyhow!("未找到 [{DEVELOPER_SECTION_TITLE}] 的更多入口"))?;
+        let bounds =
+            target.ok_or_else(|| anyhow!("未找到 [{DEVELOPER_SECTION_TITLE}] 的更多入口"))?;
         debug!(
             left = bounds.left,
             top = bounds.top,
@@ -209,10 +210,9 @@ impl SearchFlow {
     /// 以搜索结果页的返回按钮为准，确认已经离开详情页与开发者列表页。
     async fn wait_result_page(&self) -> Result<()> {
         self.driver
-            .wait_for_ui(
-                RESULT_PAGE_TIMEOUT,
-                |node| node.attribute_str("key") == Some(SEARCH_RESULT_BACK_KEY),
-            )
+            .wait_for_ui(RESULT_PAGE_TIMEOUT, |node| {
+                node.attribute_str("key") == Some(SEARCH_RESULT_BACK_KEY)
+            })
             .await
             .context("等待搜索结果页超时")?;
         Ok(())
@@ -233,7 +233,8 @@ fn developer_section_apps(tree: &UiNode) -> Vec<String> {
         return Vec::new();
     };
     // 区块容器（ListItem）的底边就是下一块推荐的上边。
-    let section_bottom = section_container(tree, title_bounds).map_or(i32::MAX, |bounds| bounds.bottom);
+    let section_bottom =
+        section_container(tree, title_bounds).map_or(i32::MAX, |bounds| bounds.bottom);
 
     let mut names = Vec::new();
     for node in tree.find_all(|node| node.attribute_str("key") == Some(APP_NAME_KEY)) {

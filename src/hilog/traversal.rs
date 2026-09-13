@@ -397,10 +397,7 @@ impl UiTraversal {
                     error = %error_chain(&error),
                     "等待分类内容超时，按空内容继续"
                 );
-                self.driver
-                    .ui_tree()
-                    .await
-                    .context("获取当前 UI 树失败")
+                self.driver.ui_tree().await.context("获取当前 UI 树失败")
             }
         }
     }
