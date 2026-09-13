@@ -5,6 +5,11 @@
 //! 进入同名列表页，列表页把该开发者的全部应用按三列网格纵向排列。整个流程结束后必须
 //! 回到搜索结果页，后续的搜索结果收集与「返回」才能继续。
 //!
+//! 同一个开发者往往有多个应用被搜到，而这套流程（下滑找区块 + 进列表页划到底）是整轮
+//! 搜索里最贵的一步，因此详情页一打开就先读头部的开发者名（见 [`detail_developer_name`]）：
+//! 本轮已经收过这个开发者就只退回搜索结果页，不再重复收集；名称记在
+//! [`SearchFlow::collected_developers`] 里，每轮分类遍历开始时清空。
+//!
 //! 前置页面状态：`execution::search_once` 刚进入搜索结果页，并把它当时的第一屏布局
 //! 作为 `result_page` 传进来，详情页流程结束后由调用方在该页面上继续收集应用列表。
 //! 因此这里既不负责打开搜索页，也不负责离开搜索结果页；异常中断时用
@@ -26,6 +31,15 @@ const DEVELOPER_SECTION_TITLE: &str = "同开发者的应用";
 const APP_DETAIL_PAGE_KEY: &str = "AppDetailPage";
 /// 页面标题的 key，开发者列表页据此与详情页里的同名区块区分。
 const PAGE_TITLE_KEY: &str = "__NavdestinationField__Text__MainTitle__";
+/// 详情页头部「开发者」标签的文本。
+const DEVELOPER_LABEL_TEXT: &str = "开发者";
+/// 详情页头部「标签 + 值」里值节点的 key：安装量、年龄、分类、开发者名共用它。
+const DETAIL_VALUE_KEY: &str = "detail_bottom_name";
+/// 认定值节点与标签同列的最大横向偏差（像素）。
+///
+/// 头部四列的列距约 390px，同一列的值与标签中心 x 只差 0～2px，60px 足以容下渲染误差，
+/// 又不会串到相邻列——串列会把「工具」这类分类值错当成开发者名。
+const DEVELOPER_COLUMN_TOLERANCE: i32 = 60;
 /// 详情页向下查找区块的最大滚动次数。
 const DETAIL_SCROLL_MAX: usize = 14;
 const DETAIL_PAGE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -43,20 +57,42 @@ impl SearchFlow {
     /// 返回收集到的名称数量；详情页没有「同开发者的应用」区块时返回 0。无论成功
     /// 还是失败，调用方都应保证流程结束后停留在搜索结果页。
     ///
-    /// 步骤：点第一个应用卡片进入详情页、向下滚动找到「同开发者的应用」区块。区块一次
-    /// 最多展示三行三列，没填满时它就是该开发者的全部应用，直接读取并用一次后返回搜索
-    /// 结果页；填满或读不到卡片时才点标题行右侧的「更多」进入开发者应用列表页，划到底
-    /// 读取全部名称，再逐级返回搜索结果页。`result_page` 是刚进入结果页时的布局快照，
-    /// 因此其中第一个应用卡片一定可见。
+    /// 步骤：点第一个应用卡片进入详情页，先读头部的开发者名——本轮已经收过这个开发者就
+    /// 直接退回结果页（返回 0），省掉后面整套动作。否则向下滚动找到「同开发者的应用」
+    /// 区块：区块一次最多展示三行三列，没填满时它就是该开发者的全部应用，直接读取并用
+    /// 一次后返回搜索结果页；填满或读不到卡片时才点标题行右侧的「更多」进入开发者应用
+    /// 列表页，划到底读取全部名称，再逐级返回搜索结果页。`result_page` 是刚进入结果页时
+    /// 的布局快照，因此其中第一个应用卡片一定可见。
     ///
     /// 没有该区块的应用会直接返回 0，此时搜索结果页的返回按钮仍在，调用方可以继续
-    /// 收集结果列表；其余失败由调用方用 `back_to_result_page` 恢复页面。
+    /// 收集结果列表；其余失败由调用方用 `back_to_result_page` 恢复页面。只有真正收完某个
+    /// 开发者的应用才会把它记进 [`SearchFlow::collected_developers`]：失败时照旧留待下一个
+    /// 同开发者的应用重试。
     pub(crate) async fn collect_developer_apps(&mut self, result_page: &UiNode) -> Result<usize> {
         let entry =
             first_result_entry(result_page).ok_or_else(|| anyhow!("搜索结果页没有应用卡片"))?;
         info!(app = %entry.name, "打开搜索结果里的第一个应用");
         self.driver.click(entry.bounds.center()).await?;
         self.wait_detail_page().await?;
+
+        // 开发者名在详情页头部，不用滚动就能读到；这一步失败只是退化为不做去重。
+        let developer = detail_developer_name(&self.driver.ui_tree().await?);
+        debug!(
+            app = %entry.name,
+            developer = developer.as_deref().unwrap_or("<未读到>"),
+            "详情页头部的开发者"
+        );
+        if let Some(developer) = developer.as_deref()
+            && self.collected_developers.contains(developer)
+        {
+            info!(
+                app = %entry.name,
+                developer = %developer,
+                "该开发者的应用本轮已收集过，跳过"
+            );
+            self.back_to_result_page().await?;
+            return Ok(0);
+        }
 
         if !self.reveal_developer_section().await? {
             debug!(app = %entry.name, "详情页没有同开发者区块");
@@ -77,6 +113,7 @@ impl SearchFlow {
                 total = self.state.app_count(),
                 "同开发者的应用不多，直接用详情页展示的名称"
             );
+            self.remember_developer(developer);
             self.back_to_result_page().await?;
             return Ok(preview.len());
         }
@@ -98,9 +135,17 @@ impl SearchFlow {
             total = self.state.app_count(),
             "同开发者的应用收集完成"
         );
+        self.remember_developer(developer);
 
         self.back_to_result_page().await?;
         Ok(names.len())
+    }
+
+    /// 记住一个刚刚收完的开发者，供本轮的其它应用跳过；读不到开发者名时什么也不做。
+    fn remember_developer(&mut self, developer: Option<String>) {
+        if let Some(developer) = developer {
+            self.collected_developers.insert(developer);
+        }
     }
 
     /// 等详情页根节点出现，避免详情页还没打开就去找区块。
@@ -219,6 +264,54 @@ impl SearchFlow {
     }
 }
 
+/// 读取详情页头部的开发者名。
+///
+/// 头部是一排「标签 + 值」：安装量 / 年龄 / 分类 / 开发者，值节点都带 `detail_bottom_name`
+/// key，标签只有文本。这里先找文本为「开发者」的标签，再在同一列（中心 x 相差不超过
+/// [`DEVELOPER_COLUMN_TOLERANCE`]）挑离标签最近的那个值节点。
+///
+/// 实机（平板、PC 布局）样例：标签 `开发者` 在 `[2445,277][2504,299]`，值是
+/// `detail_bottom_name` 的 `[2358,344][2591,366]`；同一行的「次」「岁」「工具」三个值分别
+/// 位于左边三列，中心 x 相差约 390px。
+///
+/// 读不到（页面没有该标签、值节点缺失或都不在同一列）时返回 `None`，调用方按「不知道
+/// 开发者」处理，照旧走完整的同开发者收集流程——去重只是省时间，不能因此丢数据。
+fn detail_developer_name(tree: &UiNode) -> Option<String> {
+    let label = tree.find(|node| node.attribute_str("text") == Some(DEVELOPER_LABEL_TEXT))?;
+    let label_bounds = label.bounds()?;
+    let label_center_x = label_bounds.center().x;
+
+    let mut best: Option<(i32, i32, String)> = None;
+    for node in tree.find_all(|node| node.attribute_str("key") == Some(DETAIL_VALUE_KEY)) {
+        let Some(bounds) = node.bounds() else {
+            continue;
+        };
+        // 值在标签下方；同一行的其它列也会满足，靠中心 x 区分。
+        if bounds.top < label_bounds.top {
+            continue;
+        }
+        let Some(text) = node.attribute_str("text") else {
+            continue;
+        };
+        if text.is_empty() {
+            continue;
+        }
+        let distance = (bounds.center().x - label_center_x).abs();
+        if distance > DEVELOPER_COLUMN_TOLERANCE {
+            continue;
+        }
+        // 横向距离相同时取更靠上的那个（开发者名换行时会拆成多个节点）。
+        let candidate = (distance, bounds.top, text.to_owned());
+        if best
+            .as_ref()
+            .is_none_or(|current| (candidate.0, candidate.1) < (current.0, current.1))
+        {
+            best = Some(candidate);
+        }
+    }
+    best.map(|(_, _, name)| name)
+}
+
 /// 读取「同开发者的应用」区块里已经展示出来的应用名。
 ///
 /// 区块一次最多渲染三行三列，所以返回数量小于 `DEVELOPER_PREVIEW_LIMIT` 时它就是这个
@@ -327,6 +420,62 @@ fn page_signature(tree: &UiNode) -> String {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn 详情页头部能读出开发者名() {
+        // 实机详情页头部：四个「标签 + 值」列，值共用 detail_bottom_name key。
+        let tree: UiNode = serde_json::from_value(json!({
+            "attributes": {"type": "Root"},
+            "children": [
+                {"attributes": {"text": "安装", "bounds": "[1270,277][1309,299]"}, "children": []},
+                {"attributes": {"key": "detail_top_name", "text": "<1万", "bounds": "[1262,305][1317,338]"}, "children": []},
+                {"attributes": {"key": "detail_bottom_name", "text": "次", "bounds": "[1280,344][1300,366]"}, "children": []},
+                {"attributes": {"text": "年龄", "bounds": "[1665,277][1704,299]"}, "children": []},
+                {"attributes": {"key": "detail_top_name", "text": "3+", "bounds": "[1670,305][1700,338]"}, "children": []},
+                {"attributes": {"key": "detail_bottom_name", "text": "岁", "bounds": "[1675,344][1695,366]"}, "children": []},
+                {"attributes": {"text": "分类", "bounds": "[2060,277][2099,299]"}, "children": []},
+                {"attributes": {"key": "detail_bottom_name", "text": "工具", "bounds": "[2060,344][2099,366]"}, "children": []},
+                {"attributes": {"text": "开发者", "bounds": "[2445,277][2504,299]"}, "children": []},
+                {"attributes": {"key": "detail_bottom_name", "text": "合肥棋言教育科技有限公司", "bounds": "[2358,344][2591,366]"}, "children": []}
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(
+            detail_developer_name(&tree).as_deref(),
+            Some("合肥棋言教育科技有限公司")
+        );
+    }
+
+    #[test]
+    fn 详情页没有开发者标签时读不出名字() {
+        let tree: UiNode = serde_json::from_value(json!({
+            "attributes": {"type": "Root"},
+            "children": [
+                {"attributes": {"text": "分类", "bounds": "[2060,277][2099,299]"}, "children": []},
+                {"attributes": {"key": "detail_bottom_name", "text": "工具", "bounds": "[2060,344][2099,366]"}, "children": []}
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(detail_developer_name(&tree), None);
+    }
+
+    #[test]
+    fn 相邻列的值不会被当成开发者名() {
+        // 标签存在但同列没有值：宁可返回 None（不做去重），也不能把「工具」当开发者名。
+        let tree: UiNode = serde_json::from_value(json!({
+            "attributes": {"type": "Root"},
+            "children": [
+                {"attributes": {"text": "分类", "bounds": "[2060,277][2099,299]"}, "children": []},
+                {"attributes": {"key": "detail_bottom_name", "text": "工具", "bounds": "[2060,344][2099,366]"}, "children": []},
+                {"attributes": {"text": "开发者", "bounds": "[2445,277][2504,299]"}, "children": []}
+            ]
+        }))
+        .unwrap();
+
+        assert_eq!(detail_developer_name(&tree), None);
+    }
 
     #[test]
     fn 详情页区块只统计标题下方当前区块的应用() {

@@ -146,6 +146,9 @@ hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
 - 「搜索结果页」：只要树里存在 `SearchInputCard.Button.searchFrameBack`
   （`has_key`）。这是 `search_once` 里判定搜索成功的**唯一判据**。
 - 「应用详情页」：存在 key `AppDetailPage`。
+- 「详情页头部的开发者名」：文本为 `开发者` 的标签 + 同列（中心 x 相差 ≤ 60px）的
+  `detail_bottom_name` 值节点。该 key 被安装量/年龄/分类/开发者四列共用，所以必须按列取；
+  读不到就当作不知道开发者，去重跳过（见下）。
 - 「开发者应用列表页」：存在 `__NavdestinationField__Text__MainTitle__` 且其 text 等于
   `同开发者的应用`——详情页里同名的区块只是普通文本，没有这个标题 key，两者必须区分。
 - 「分类页就绪」：`category_buttons(tree)` 非空。
@@ -175,6 +178,7 @@ hdc file recv /data/local/tmp/shot.jpeg .\tmp\shot.jpeg
 | 详情页找不到「同开发者的应用」 | 部分应用详情页本身没有该区块 | 属于正常分支：`reveal_developer_section` 返回 false，收集数记 0，原路返回结果页，不是错误 |
 | 详情页区块只显示一部分应用 | 区块固定最多渲染三行三列（实测 5 个应用的开发者展示 5 个，73 个的展示 9 个满行） | 没填满时区块就是全部应用，代码直接读取区块内的 `app_name`；填满时才点「更多」进列表页，避免为应用很少的开发者多跳一次页面 |
 | 详情页滚动 14 次仍没有该区块 | 达到 `DETAIL_SCROLL_MAX` | 记 warning 并按「没有该区块」处理 |
+| 同一开发者的应用只打开了一次同开发者区块 | `SearchFlow::collected_developers` 去重（每轮分类遍历开始时清空） | 详情页头部读到开发者名后，本轮收过就直接跳过；想强制重新收集用 `--fresh` 重跑该轮，或确认 `detail_developer_name` 是否读到了名字（DEBUG 里有「详情页头部的开发者」） |
 | 「更多」入口点不到 | 该入口没有 key 也没有 text | 只能按 clickable + 与标题同一行 + 位于标题右侧的几何规则定位；若规则失效需要重新 dump 详情页核对 bounds |
 | 偶发「等待控件超时」但整体能跑完 | 页面切换/渲染抖动 | 靠重试自愈：搜索结果页 15s、结果列表 6s、详情页 15s；失败后 `home_ready = false` 重建主页 |
 | hilog 报 warning「等待分类内容超时，按空内容继续」/「等待应用列表超时，按空列表继续」 | 偶发空帧 | 设计如此，只跳过当前分类；只有「未找到分类按钮」「滚动超过 100 次」才整台设备失败 |

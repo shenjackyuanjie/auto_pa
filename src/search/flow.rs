@@ -17,6 +17,7 @@ use hm_driver_rs::{
     AppIdentifier, DeviceSelector, DeviceSerial, HdcConfig, HmDriver, SwipeArea, SwipeDirection,
     UiNode,
 };
+use std::collections::HashSet;
 use std::time::Duration;
 use tokio::time::sleep;
 use tracing::{error, info, warn};
@@ -59,6 +60,12 @@ pub struct SearchFlow {
     /// `--deep`：进入分类后按 `hilog` 的深度爬——有子分类入口就逐个进去，列表滑到底，
     /// 而不是只读固定 3 屏。
     pub(crate) deep_mode: bool,
+    /// 本轮爬取里已经收集过「同开发者的应用」的开发者名。
+    ///
+    /// 同一个开发者可能有多个应用被搜到，第二次起只打开详情页确认开发者名、直接返回，
+    /// 不再下滑找区块、进「更多」列表页划到底。集合在每轮分类遍历（`collect_all_categories`）
+    /// 开始时清空，因此刷新遍历之后会重新收集一遍。
+    pub(crate) collected_developers: HashSet<String>,
     /// 是否执行「打开第一个搜索结果、收集同开发者应用」这一步（`--skip-developer` 时关闭）。
     pub(crate) developer_scan: bool,
     /// AppGallery 的应用标识，用于启停应用。
@@ -87,6 +94,7 @@ impl SearchFlow {
             random_mode,
             deep_mode,
             developer_scan,
+            collected_developers: HashSet::new(),
             bundle: AppIdentifier::new(APPGALLERY_BUNDLE)?,
             home_ready: false,
             device_label,

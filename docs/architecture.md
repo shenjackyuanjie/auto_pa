@@ -93,6 +93,8 @@ search_once(name):
 
 ```text
 结果页按 (top, left) 取第一个应用卡片 -> 点击 -> 等 key AppDetailPage (15s)
+读详情页头部的开发者名：文本「开发者」标签 + 同列的 detail_bottom_name 值（不用滚动）
+    本轮已收集过该开发者（SearchFlow::collected_developers）-> 直接退回结果页，返回 0
 逐屏下滑最多 DETAIL_SCROLL_MAX = 14 次，直到出现文本「同开发者的应用」
     前后两屏「全部非空文本排序去重拼接」签名相同 -> 判定到底，视为没有该区块，返回 0
 读区块内的应用卡片：标题下方的 app_name，范围止于包含标题的最小 ListItem 的底边
@@ -100,11 +102,16 @@ search_once(name):
     填满或读不到卡片 -> 点区块标题同一行、位于标题右侧的最左可点击节点（该入口没有 key、没有 text）
         等列表页：key __NavdestinationField__Text__MainTitle__ 且 text == 同开发者的应用 (12s)
         collect_app_list(allow_empty=false) 划到底 -> add_apps -> 写进度 -> 返回
+    收完记下这个开发者；同一个开发者的其它应用本轮不再走上面两步
 再逐级后退直到结果页返回按钮出现 -> 等结果页 (12s)
 ```
 
 详情页区块一次最多渲染三行三列（实测 5 个应用的开发者只展示 5 个，73 个应用的开发者展示
 9 个满行），所以「没填满」可以安全地当作完整列表，省掉一次进列表页再退回的往返。
+
+开发者名的去重只省时间、不承担正确性：读不到名字（没有标签、值不在同列）或收集失败时不记名单，
+下一个同开发者的应用会照旧完整走一遍；名单在每轮 `collect_all_categories` 开头清空，因此刷新
+遍历之后重新收集。读取规则与实机几何见 `detail_developer_name` 的文档与单测。
 
 异常时 `back_to_result_page()`：最多 3 次尝试，树里存在 `SearchInputCard.Button.searchFrameBack`
 即认为已在结果页，否则 `go_back`；正常收尾与中断恢复共用它。
@@ -162,6 +169,7 @@ search_once(name):
 | `__SearchField__search_box`、`__SearchField__Button__search_box` | key **前缀** | 搜索输入框、搜索按钮；后缀数字会变，必须前缀匹配 | 应用页搜索浮层 | `search/execution.rs` |
 | `SearchInputCard.Button.searchFrameBack` | key | 结果页返回按钮，同时是「结果页已打开」的唯一判据 | 搜索结果页 | `search/execution.rs`、`search/developer.rs` |
 | `AppDetailPage`、`__NavdestinationField__Text__MainTitle__` + text `同开发者的应用` | key（后者需 key + text） | 确认应用详情页已打开；开发者列表页靠主标题 key 与同名 text 同时命中来区分详情页里的同名区块 | 应用详情页 / 开发者应用列表页 | `search/developer.rs` |
+| text `开发者` + `detail_bottom_name` | text（标签）+ key（值） | 详情页头部「标签 + 值」四列（安装量/年龄/分类/开发者）共用值 key，按「与标签同列（中心 x 相差 ≤ 60px）」取开发者名，用于同一开发者的去重 | 应用详情页头部 | `search/developer.rs` |
 | 「更多」入口 | **无 key、无 text** | 按 `clickable == "true"`、垂直覆盖标题行中心、`left >= 标题右边界`，取 `left` 最大者（最靠右） | 详情页区块标题行右侧 | `search/developer.rs` |
 | `新鲜应用`；`新鲜应用`、`新鲜游戏`、`时下畅销应用`、`时下畅销游戏` | text | `--random` 模式下分类内入口；`--deep` 与 hilog 的子分类入口（`SUBCATEGORY_NAMES`） | 分类页 | `search/collection.rs`、`appgallery.rs` |
 | `精选`、`分类`、`排行榜`、`重磅更新`、`安装`、`打开`、`更新` | text | 分类按钮黑名单（`is_category_tab_or_action`） | 分类页 | `appgallery.rs` |

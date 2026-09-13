@@ -53,6 +53,9 @@ impl SearchFlow {
     /// 「游戏」页签不在这一轮范围内。`deep_mode` 只影响进入分类后的爬取深度，不改变页签范围。
     pub(crate) async fn collect_all_categories(&mut self) -> Result<()> {
         self.start_appgallery().await?;
+        // 新一轮爬取意味着可能又发现了一批应用，同开发者应用要重新收集一遍：清掉上一轮
+        // 记下的开发者，避免刷新遍历之后仍按旧名单跳过。
+        self.collected_developers.clear();
 
         let mut pages = vec!["应用"];
         if !self.random_mode {
