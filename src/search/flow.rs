@@ -22,6 +22,7 @@ use tokio::time::sleep;
 use tracing::{error, info, warn};
 
 use crate::appgallery::{APPGALLERY_ABILITY, APPGALLERY_BUNDLE, category_buttons};
+use crate::logging::error_chain;
 use crate::search::state::{SearchState, SearchStateStore};
 
 /// 分类列表滚动遍历的硬上限：超过它仍未到底说明页面结构已经不符合预期，
@@ -113,7 +114,7 @@ impl SearchFlow {
         if let Err(error) = self.search_pending().await {
             warn!(
                 device = %self.device_label,
-                error = %error,
+                error = ?error,
                 "首轮搜索存在失败，继续刷新分类"
             );
         }
@@ -150,7 +151,11 @@ impl SearchFlow {
     pub(crate) async fn start_appgallery(&mut self) -> Result<()> {
         info!(device = %self.device_label, "正在关闭 AppGallery");
         if let Err(error) = self.driver.stop_app(&self.bundle).await {
-            warn!(device = %self.device_label, error = %error, "关闭 AppGallery 时出现警告");
+            warn!(
+                device = %self.device_label,
+                error = %error_chain(&error),
+                "关闭 AppGallery 时出现警告"
+            );
         }
         sleep(APP_STOP_SETTLE).await;
         info!(device = %self.device_label, "正在启动 AppGallery");
@@ -332,7 +337,7 @@ pub async fn run_device(
         .hdc_config(hdc_config)
         .connect()
         .await
-        .context("连接 HmDriver 失败")?;
+        .with_context(|| format!("[{device_label}] 连接 HmDriver 失败"))?;
     info!(device = %device_label, "HmDriver 连接成功");
     let mut flow = SearchFlow::new(
         driver,
@@ -344,7 +349,7 @@ pub async fn run_device(
     )?;
     let run_result = flow.run().await;
     let cleanup_result = flow.shutdown().await;
-    match (run_result, cleanup_result) {
+    let outcome = match (run_result, cleanup_result) {
         (Ok(()), Ok(())) => Ok(()),
         (Err(error), Ok(())) => {
             error!(device = %device_label, error = ?error, "设备执行失败");
@@ -358,5 +363,7 @@ pub async fn run_device(
             error!(device = %device_label, error = ?error, cleanup = ?cleanup, "设备执行和清理均失败");
             Err(error.context(format!("同时清理失败：{cleanup}")))
         }
-    }
+    };
+    // 设备标签挂在错误链最外层，汇总时只靠错误本身就能指出是哪台设备失败的。
+    outcome.with_context(|| format!("[{device_label}]"))
 }

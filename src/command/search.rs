@@ -112,7 +112,7 @@ pub async fn run(cli: SearchArgs) -> Result<()> {
     while let Some(result) = tasks.join_next().await {
         match result {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => failures.push(error.to_string()),
+            Ok(Err(error)) => failures.push(format!("{error:?}")),
             Err(error) => failures.push(format!("设备任务异常：{error}")),
         }
     }

@@ -68,7 +68,7 @@ impl SearchFlow {
                         break;
                     }
                     Err(error) => {
-                        warn!(app = %app_name, attempt, error = %error, "搜索失败");
+                        warn!(app = %app_name, attempt, error = ?error, "搜索失败");
                         self.home_ready = false;
                         if attempt < MAX_SEARCH_ATTEMPTS {
                             self.ensure_search_home().await?;
@@ -159,7 +159,7 @@ impl SearchFlow {
         {
             Ok(()) => sleep(SEARCH_CLICK_SETTLE).await,
             Err(error) if english => {
-                debug!(app = %app_name, error = %error, "回车后未找到搜索按钮，按已提交处理");
+                debug!(app = %app_name, error = ?error, "回车后未找到搜索按钮，按已提交处理");
             }
             Err(error) => return Err(error),
         }
@@ -189,7 +189,7 @@ impl SearchFlow {
                     info!(app = %app_name, collected, "同开发者应用收集结束");
                 }
                 Err(error) => {
-                    warn!(app = %app_name, error = %error, "同开发者应用收集失败");
+                    warn!(app = %app_name, error = ?error, "同开发者应用收集失败");
                     // 收集过程中可能已经离开结果页，先恢复页面再继续统计结果列表。
                     self.back_to_result_page().await?;
                 }
