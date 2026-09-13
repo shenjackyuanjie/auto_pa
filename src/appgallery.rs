@@ -103,6 +103,28 @@ pub fn app_snapshot(tree: &UiNode) -> Vec<AppEntry> {
     }
 }
 
+/// 分类页面上固定的子分类入口名称。
+///
+/// `search --deep` 与 `hilog` 都按这份名单判断一个分类页有没有子分类层。
+pub const SUBCATEGORY_NAMES: &[&str] = &["新鲜应用", "新鲜游戏", "时下畅销应用", "时下畅销游戏"];
+
+/// 从当前页面里查找固定的子分类入口。
+///
+/// 新版 AppGallery 的入口层级是「可点击 Column -> Row -> Text」，Row 和 Text 自身都
+/// 不是 Button，所以这里只按文本找点击目标，不要求控件类型。
+pub fn subcategory_buttons(tree: &UiNode) -> Vec<CategoryButton> {
+    SUBCATEGORY_NAMES
+        .iter()
+        .filter_map(|&name| {
+            let target = tree.find_click_target(|node| node.attribute_str("text") == Some(name))?;
+            Some(CategoryButton {
+                name: name.to_owned(),
+                bounds: target.bounds()?,
+            })
+        })
+        .collect()
+}
+
 /// 判断文本是否属于底部导航标签或卡片上的操作按钮，而不是分类名。
 ///
 /// 这些文本会出现在同一个 `List` 里，若混进分类结果，遍历时就会去点错控件。
@@ -186,5 +208,45 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["A", "B"]
         );
+    }
+
+    #[test]
+    fn 能识别新界面的子分类() {
+        assert!(SUBCATEGORY_NAMES.contains(&"新鲜应用"));
+        assert!(SUBCATEGORY_NAMES.contains(&"时下畅销游戏"));
+        assert!(!SUBCATEGORY_NAMES.contains(&"工具"));
+    }
+
+    #[test]
+    fn 子分类入口不要求_button_控件() {
+        // 实机新版 AppGallery 的入口层级为 clickable Column -> Row -> Text，
+        // Row 和 Text 自身均不是 Button。
+        let tree: UiNode = serde_json::from_value(json!({
+            "attributes": {"type": "Root"},
+            "children": [{
+                "attributes": {
+                    "type": "Column", "clickable": "true",
+                    "bounds": "[25,135][3095,190]"
+                },
+                "children": [{
+                    "attributes": {
+                        "type": "Row", "text": "新鲜应用",
+                        "bounds": "[50,137][3005,190]"
+                    },
+                    "children": [{
+                        "attributes": {
+                            "type": "Text", "text": "新鲜应用",
+                            "bounds": "[50,137][149,190]"
+                        },
+                        "children": []
+                    }]
+                }]
+            }]
+        }))
+        .unwrap();
+
+        let buttons = subcategory_buttons(&tree);
+        assert_eq!(buttons.len(), 1);
+        assert_eq!(buttons[0].name, "新鲜应用");
     }
 }

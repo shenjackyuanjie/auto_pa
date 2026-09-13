@@ -18,6 +18,7 @@ use tracing::{info, warn};
 
 use crate::appgallery::{
     APPGALLERY_ABILITY, APPGALLERY_BUNDLE, CategoryButton, app_snapshot, category_buttons,
+    subcategory_buttons,
 };
 use crate::logging::error_chain;
 
@@ -452,70 +453,5 @@ impl UiTraversal {
             .ok_or_else(|| anyhow!("控件 [{description}] 没有有效 bounds"))?;
         self.driver.click(bounds.center()).await?;
         Ok(())
-    }
-}
-
-/// 从当前页面里查找固定的子分类入口。
-///
-/// 新版 AppGallery 的入口层级是「可点击 Column -> Row -> Text」，Row 和 Text 自身都
-/// 不是 Button，所以这里只按文本找点击目标，不要求控件类型。
-fn subcategory_buttons(tree: &UiNode) -> Vec<CategoryButton> {
-    SUBCATEGORY_NAMES
-        .iter()
-        .filter_map(|&name| {
-            let target = tree.find_click_target(|node| node.attribute_str("text") == Some(name))?;
-            Some(CategoryButton {
-                name: name.to_owned(),
-                bounds: target.bounds()?,
-            })
-        })
-        .collect()
-}
-
-/// 新分类页面上固定的子分类入口名称。
-const SUBCATEGORY_NAMES: &[&str] = &["新鲜应用", "新鲜游戏", "时下畅销应用", "时下畅销游戏"];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn 能识别新界面的子分类() {
-        assert!(SUBCATEGORY_NAMES.contains(&"新鲜应用"));
-        assert!(SUBCATEGORY_NAMES.contains(&"时下畅销游戏"));
-        assert!(!SUBCATEGORY_NAMES.contains(&"工具"));
-    }
-
-    #[test]
-    fn 子分类入口不要求_button_控件() {
-        // 实机新版 AppGallery 的入口层级为 clickable Column -> Row -> Text，
-        // Row 和 Text 自身均不是 Button。
-        let tree: UiNode = serde_json::from_value(serde_json::json!({
-            "attributes": {"type": "Root"},
-            "children": [{
-                "attributes": {
-                    "type": "Column", "clickable": "true",
-                    "bounds": "[25,135][3095,190]"
-                },
-                "children": [{
-                    "attributes": {
-                        "type": "Row", "text": "新鲜应用",
-                        "bounds": "[50,137][3005,190]"
-                    },
-                    "children": [{
-                        "attributes": {
-                            "type": "Text", "text": "新鲜应用",
-                            "bounds": "[50,137][149,190]"
-                        },
-                        "children": []
-                    }]
-                }]
-            }]
-        }))
-        .unwrap();
-
-        let buttons = subcategory_buttons(&tree);
-        assert_eq!(buttons.len(), 1);
-        assert_eq!(buttons[0].name, "新鲜应用");
     }
 }
