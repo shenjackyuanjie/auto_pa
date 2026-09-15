@@ -1,5 +1,13 @@
-﻿*.log
+*.log
 *.json
-try_get.py
+.lh
+.cache
 
-*__pycache__*
+
+# Added by cargo
+
+/target
+
+/hypium
+logs/search-rust.log.*
+logs/hilog-rust.log.*
